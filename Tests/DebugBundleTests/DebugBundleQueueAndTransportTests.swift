@@ -273,7 +273,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         let event = DebugBundleEventEnvelope(
             sdkName: "@debugbundle/sdk-swift",
-            sdkVersion: "0.1.0",
+            sdkVersion: "0.1.1",
             service: "checkout-ios",
             environment: "production",
             eventType: DebugBundleEventType.logEvent,
@@ -412,7 +412,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         let transport = DebugBundleHTTPTransport()
         let event = DebugBundleEventEnvelope(
             sdkName: "@debugbundle/sdk-swift",
-            sdkVersion: "0.1.0",
+            sdkVersion: "0.1.1",
             service: "checkout-ios",
             environment: "production",
             eventType: DebugBundleEventType.logEvent,
