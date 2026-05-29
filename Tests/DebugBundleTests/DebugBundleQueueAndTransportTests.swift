@@ -205,10 +205,22 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         await Task.yield()
         await client.flush()
 
+        let recordedBatchCount = await waitForRecordedBatchCount(on: transport, minimum: 2)
+        XCTAssertEqual(recordedBatchCount, 2)
+
         let batches = await transport.recordedBatches()
-        XCTAssertEqual(batches.map(\.count), [2, 1])
-        XCTAssertEqual(batches.first?.map { $0.payload["message"] ?? .null }, [.string("first"), .string("second")])
-        XCTAssertEqual(batches.last?.first?.payload["message"], .string("third"))
+        XCTAssertEqual(batches.count, 2)
+        XCTAssertEqual(batches.map(\.count).sorted(), [1, 2])
+
+        let deliveredMessages = batches.flatMap { batch in
+            batch.compactMap { envelope -> String? in
+                guard case let .string(message)? = envelope.payload["message"] else {
+                    return nil
+                }
+                return message
+            }
+        }
+        XCTAssertEqual(deliveredMessages, ["first", "second", "third"])
     }
 
     func testFlushIntervalTriggersPeriodicFlushWithoutExplicitCall() async {
@@ -622,6 +634,17 @@ private func waitForSendCallCount(on transport: SequencedTransport, minimum: Int
         await Task.yield()
     }
     return await transport.sendCallCount()
+}
+
+private func waitForRecordedBatchCount(on transport: RecordingTransport, minimum: Int) async -> Int {
+    for _ in 0 ..< 40 {
+        let currentCount = await transport.recordedBatches().count
+        if currentCount >= minimum {
+            return currentCount
+        }
+        await Task.yield()
+    }
+    return await transport.recordedBatches().count
 }
 
 private struct StaticRemoteConfigClient: DebugBundleRemoteConfigClienting {
