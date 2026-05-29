@@ -1,0 +1,29 @@
+name: Swift SDK CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  host-swiftpm:
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Swift package tests
+        run: make test
+
+      - name: Build Swift package
+        run: make build
+
+  ios-simulator:
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run iOS simulator tests
+        run: make test-ios-simulator
