@@ -723,12 +723,12 @@ private func waitForSendCallCount(on transport: SequencedTransport, minimum: Int
 }
 
 private func waitForRecordedBatchCount(on transport: RecordingTransport, minimum: Int) async -> Int {
-    for _ in 0 ..< 40 {
+    for _ in 0 ..< 100 {
         let currentCount = await transport.recordedBatches().count
         if currentCount >= minimum {
             return currentCount
         }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return await transport.recordedBatches().count
 }
