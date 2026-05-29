@@ -4,6 +4,8 @@ Swift Package Manager SDK for DebugBundle.
 
 This repository is the native Apple-platform client SDK surface. The current implementation establishes the core universal API, fail-open client behavior, redaction, duplicate suppression, offline delivery, capture-policy enforcement, remote probes, and first-party Apple-platform adapters.
 
+Install the package with Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift`, version `0.1.0` or a compatible SemVer range.
+
 ## Current Scope
 
 - Universal Swift facade and instance client
@@ -53,6 +55,7 @@ make test-ios-simulator IOS_SIMULATOR_DESTINATION="platform=iOS Simulator,name=i
 ## Support Labels
 
 - Minimum compatibility target: iOS 15 and iPadOS 15 through Swift Package Manager
+- Current release: `v0.1.0`
 - Current package development lane: Swift 5.10 toolchain with Swift 6-compatible concurrency patterns where practical
 - Installed-base validation in this repo: SwiftPM package tests on macOS plus iOS simulator package tests through `xcodebuild`, including UIKit and SwiftUI lifecycle coverage
 
@@ -70,6 +73,7 @@ When `enabled` is true but the SDK has no usable project token or endpoint, it f
 ## First Event Verification
 
 ```swift
+import Foundation
 import DebugBundle
 
 DebugBundle.initialize(
@@ -77,7 +81,7 @@ DebugBundle.initialize(
 		projectToken: Bundle.main.debugBundleProjectToken,
 		service: "checkout-ios",
 		environment: "staging",
-		endpoint: "http://127.0.0.1:9001/v1/events"
+		endpoint: URL(string: "http://127.0.0.1:9001/v1/events")!
 	)
 )
 
