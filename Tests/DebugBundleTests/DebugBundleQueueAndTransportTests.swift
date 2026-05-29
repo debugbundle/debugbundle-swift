@@ -62,8 +62,8 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         XCTAssertEqual(offlineBatches.count, 0)
 
         monitor.update(.connected)
-        await Task.yield()
-        await Task.yield()
+        let recordedBatchCount = await waitForRecordedBatchCount(on: transport, minimum: 1)
+        XCTAssertEqual(recordedBatchCount, 1)
 
         let batches = await transport.recordedBatches()
         XCTAssertEqual(batches.count, 1)
@@ -312,6 +312,92 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         XCTAssertEqual(result.statusCode, 429)
         XCTAssertEqual(result.retryAfter, 300)
+    }
+
+    func testRemoteConfigFetchRewritesEventsEndpointPreservingPrefixAndQuery() async {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        let client = DebugBundleHTTPRemoteConfigClient(session: session)
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(
+                request.url?.absoluteString,
+                "https://proxy.example.com/runtime/v1/sdk/config?tenant=acme"
+            )
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token")
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["ETag": "etag-123"]
+            )!
+            let data = try JSONEncoder().encode(
+                DebugBundleRemoteConfigResponse(
+                    probesEnabled: true,
+                    remoteProbesEnabled: false,
+                    activeProbes: [],
+                    pollIntervalMillis: 15_000
+                )
+            )
+            return (response, data)
+        }
+
+        let result = await client.fetch(
+            request: DebugBundleRemoteConfigRequest(
+                projectToken: "token",
+                endpoint: URL(string: "https://proxy.example.com/runtime/v1/events?tenant=acme")!,
+                timeout: 5
+            )
+        )
+
+        XCTAssertEqual(
+            result,
+            .loaded(
+                DebugBundleRemoteConfigResponse(
+                    probesEnabled: true,
+                    remoteProbesEnabled: false,
+                    activeProbes: [],
+                    pollIntervalMillis: 15_000
+                ),
+                eTag: "etag-123"
+            )
+        )
+    }
+
+    func testRemoteConfigFetchAppendsSDKConfigForCustomEndpointPreservingQuery() async {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        let client = DebugBundleHTTPRemoteConfigClient(session: session)
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(
+                request.url?.absoluteString,
+                "https://proxy.example.com/runtime/ingest/sdk/config?tenant=acme"
+            )
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 304,
+                httpVersion: nil,
+                headerFields: ["ETag": "etag-456"]
+            )!
+            return (response, Data())
+        }
+
+        let result = await client.fetch(
+            request: DebugBundleRemoteConfigRequest(
+                projectToken: "token",
+                endpoint: URL(string: "https://proxy.example.com/runtime/ingest?tenant=acme")!,
+                timeout: 5,
+                eTag: "etag-123"
+            )
+        )
+
+        XCTAssertEqual(result, .notModified(eTag: "etag-456"))
     }
 
     func testMockIngestionServerCapturesRealTransportRequest() async throws {

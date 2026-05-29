@@ -98,13 +98,33 @@ public struct DebugBundleHTTPRemoteConfigClient: DebugBundleRemoteConfigClientin
     }
 
     private func sdkConfigURL(for endpoint: URL) -> URL {
-        let endpointString = endpoint.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if endpointString.hasSuffix("/v1/events") {
-            return URL(string: String(endpointString.dropLast("/v1/events".count)) + "/v1/sdk/config") ?? endpoint
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return endpoint
         }
-        if endpointString.hasSuffix("/events") {
-            return URL(string: String(endpointString.dropLast("/events".count)) + "/sdk/config") ?? endpoint
+
+        let normalizedPath = components.path == "/"
+            ? ""
+            : components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                .split(separator: "/")
+                .joined(separator: "/")
+                .withLeadingSlash
+
+        if normalizedPath.hasSuffix("/v1/events") {
+            components.path = String(normalizedPath.dropLast("/events".count)) + "/sdk/config"
+        } else if normalizedPath.hasSuffix("/events") {
+            components.path = String(normalizedPath.dropLast("/events".count)) + "/sdk/config"
+        } else if normalizedPath.isEmpty {
+            components.path = "/sdk/config"
+        } else {
+            components.path = normalizedPath + "/sdk/config"
         }
-        return URL(string: endpointString + "/sdk/config") ?? endpoint
+
+        return components.url ?? endpoint
+    }
+}
+
+private extension String {
+    var withLeadingSlash: String {
+        hasPrefix("/") ? self : "/" + self
     }
 }
