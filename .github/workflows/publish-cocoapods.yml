@@ -1,0 +1,36 @@
+name: Publish CocoaPods
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate tag matches podspec version
+        run: |
+          SPEC_VERSION="$(ruby -ne 'if $_ =~ /s\.version\s*=\s*"([^"]+)"/; puts $1; exit; end' DebugBundle.podspec)"
+          if [ "v${SPEC_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match podspec version ${SPEC_VERSION}."
+            exit 1
+          fi
+
+      - name: Install CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+          pod --version
+
+      - name: Lint podspec
+        run: make pod-lint
+
+      - name: Publish podspec
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: make pod-publish

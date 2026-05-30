@@ -8,9 +8,11 @@ Native DebugBundle SDK for iOS and iPadOS apps, with SwiftUI and UIKit lifecycle
 
 Swift is a mobile client SDK, not a browser relay host. It sends mobile events to the configured ingestion endpoint and uses explicit first-party URLSession or Alamofire instrumentation for trace correlation; browser relay settings such as `transportMode`, `allowedOrigins`, and CORS preflight handling belong to the Browser SDK plus a backend/server SDK relay.
 
-The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift`.
+The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle`.
 
 ## Installation
+
+### Swift Package Manager
 
 Add the package to your app target:
 
@@ -34,6 +36,24 @@ Add the package to your app target:
 ```
 
 In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `0.1.1` or a compatible SemVer range.
+
+### CocoaPods
+
+Add the pod to your iOS app target:
+
+```ruby
+target "CheckoutApp" do
+	pod "DebugBundle", "~> 0.1.1"
+end
+```
+
+Then run:
+
+```sh
+pod install
+```
+
+The CocoaPods package currently publishes the core `DebugBundle` native client used by React Native and brownfield pod-based iOS apps. Use Swift Package Manager when you need the optional Swift package products listed below.
 
 Available products:
 
@@ -238,6 +258,22 @@ CheckoutView()
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
+
+## CocoaPods Release
+
+Validate the podspec before release:
+
+```sh
+make pod-lint
+```
+
+Publish from an authenticated CocoaPods trunk session:
+
+```sh
+make pod-publish
+```
+
+GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v0.1.1` for podspec version `0.1.1`.
 
 ## Dependency Alignment
 

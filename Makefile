@@ -14,6 +14,14 @@ test-ios-simulator:
 build:
 	swift build
 
+.PHONY: pod-lint
+pod-lint:
+	pod spec lint DebugBundle.podspec --quick --allow-warnings
+
+.PHONY: pod-publish
+pod-publish:
+	pod trunk push DebugBundle.podspec --allow-warnings --synchronous
+
 .PHONY: clean
 clean:
 	swift package clean
