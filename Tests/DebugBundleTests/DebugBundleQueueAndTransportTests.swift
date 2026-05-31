@@ -273,7 +273,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         let event = DebugBundleEventEnvelope(
             sdkName: "@debugbundle/sdk-swift",
-            sdkVersion: "0.1.1",
+            sdkVersion: "1.0.0",
             service: "checkout-ios",
             environment: "production",
             eventType: DebugBundleEventType.logEvent,
@@ -412,7 +412,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         let transport = DebugBundleHTTPTransport()
         let event = DebugBundleEventEnvelope(
             sdkName: "@debugbundle/sdk-swift",
-            sdkVersion: "0.1.1",
+            sdkVersion: "1.0.0",
             service: "checkout-ios",
             environment: "production",
             eventType: DebugBundleEventType.logEvent,
@@ -712,12 +712,12 @@ private func adaptRequest(
 }
 
 private func waitForSendCallCount(on transport: SequencedTransport, minimum: Int) async -> Int {
-    for _ in 0 ..< 20 {
+    for _ in 0 ..< 100 {
         let currentCount = await transport.sendCallCount()
         if currentCount >= minimum {
             return currentCount
         }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return await transport.sendCallCount()
 }

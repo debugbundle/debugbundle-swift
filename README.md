@@ -1,6 +1,6 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v0.1.1-orange)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v1.0.0-orange)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue)
 
@@ -19,7 +19,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 .dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "0.1.1")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "1.0.0")
 ],
 .targets: [
 	.target(
@@ -35,7 +35,7 @@ Add the package to your app target:
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `0.1.1` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `1.0.0` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -43,7 +43,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", "~> 0.1.1"
+	pod "DebugBundle", "~> 1.0.0"
 end
 ```
 
@@ -190,7 +190,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names to redact before persistence or transport. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `0.1.1` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `1.0.0` | SDK version stamped into outgoing event metadata. |
 
 ## Install Examples By Mode
 
@@ -254,7 +254,7 @@ CheckoutView()
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current package release | `v0.1.1` |
+| Current package release | `v1.0.0` |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -273,7 +273,7 @@ Publish from an authenticated CocoaPods trunk session:
 make pod-publish
 ```
 
-GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v0.1.1` for podspec version `0.1.1`.
+GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v1.0.0` for podspec version `1.0.0`.
 
 ## Dependency Alignment
 

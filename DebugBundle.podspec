@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "DebugBundle"
-  s.version      = "0.1.1"
+  s.version      = "1.0.0"
   s.summary      = "Native DebugBundle SDK for iOS apps."
   s.description  = "Core DebugBundle client, queueing, transport, redaction, capture policy, and probes for iOS apps."
   s.license      = { :type => "AGPL-3.0-only" }
