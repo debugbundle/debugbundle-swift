@@ -172,7 +172,8 @@ final class DebugBundleClientTests: XCTestCase {
 
         await client.flush()
 
-        let events = await transport.recordedBatches().flatMap { $0 }
+        let batches = await transport.recordedBatches()
+        let events = batches.flatMap { $0 }
         XCTAssertEqual(events.map(\ .eventType), [
             DebugBundleEventType.logEvent,
             DebugBundleEventType.logEvent,
@@ -289,6 +290,56 @@ final class DebugBundleClientTests: XCTestCase {
         let events = batches.flatMap { $0 }
         XCTAssertEqual(events.map(\.eventType), [DebugBundleEventType.frontendException])
         XCTAssertEqual(events.first?.payload["breadcrumbs"]?.arrayValue?.count, 1)
+    }
+
+    func testImmediateClientErrorPathRulesPromoteOnlyValidConfiguredMethods() async throws {
+        let transport = RecordingTransport()
+        let client = DebugBundleClient(
+            config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
+            transport: transport,
+            remoteConfigClient: StaticRemoteConfigClient(
+                result: .loaded(
+                    DebugBundleRemoteConfigResponse(
+                        capturePolicy: DebugBundleRemoteCapturePolicy(
+                            preset: "minimal",
+                            captureLogs: "error",
+                            captureRequestEvents: "off",
+                            captureBreadcrumbs: "exception_only",
+                            captureProbeEvents: "buffer_only",
+                            immediateClientErrorPathRules: [
+                                DebugBundleImmediateClientErrorPathRule(
+                                    statusCode: 404,
+                                    pathPattern: "/checkout/*",
+                                    methods: ["POST"]
+                                ),
+                                DebugBundleImmediateClientErrorPathRule(
+                                    statusCode: 404,
+                                    pathPattern: "/admin/*",
+                                    methods: ["TRACE"]
+                                )
+                            ]
+                        )
+                    ),
+                    eTag: nil
+                )
+            ),
+            random: { 0 }
+        )
+
+        await client.refreshRemoteConfig()
+        client.captureRequest(
+            DebugBundleRequestInfo(method: "POST", url: "/checkout/cart"),
+            response: DebugBundleResponseInfo(statusCode: 404, durationMillis: 42)
+        )
+        client.captureRequest(
+            DebugBundleRequestInfo(method: "TRACE", url: "/admin/panel"),
+            response: DebugBundleResponseInfo(statusCode: 404, durationMillis: 42)
+        )
+        await client.flush()
+
+        let events = await transport.recordedBatches().flatMap { $0 }
+        XCTAssertEqual(events.map(\.eventType), [DebugBundleEventType.requestEvent])
+        XCTAssertEqual(events.first?.payload["url"], .string("/checkout/cart"))
     }
 
     func testStandaloneBreadcrumbPolicyEmitsFrontendBreadcrumbEvents() async throws {

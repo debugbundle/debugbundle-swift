@@ -38,6 +38,7 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
     public var captureBreadcrumbs: String?
     public var captureProbeEvents: String?
     public var immediateClientErrorStatuses: [Int]
+    public var immediateClientErrorPathRules: [DebugBundleImmediateClientErrorPathRule]
 
     public init(
         preset: String,
@@ -45,7 +46,8 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
         captureRequestEvents: String? = nil,
         captureBreadcrumbs: String? = nil,
         captureProbeEvents: String? = nil,
-        immediateClientErrorStatuses: [Int] = []
+        immediateClientErrorStatuses: [Int] = [],
+        immediateClientErrorPathRules: [DebugBundleImmediateClientErrorPathRule] = []
     ) {
         self.preset = preset
         self.captureLogs = captureLogs
@@ -53,6 +55,7 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
         self.captureBreadcrumbs = captureBreadcrumbs
         self.captureProbeEvents = captureProbeEvents
         self.immediateClientErrorStatuses = immediateClientErrorStatuses
+        self.immediateClientErrorPathRules = immediateClientErrorPathRules
     }
 
     enum CodingKeys: String, CodingKey {
@@ -62,6 +65,25 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
         case captureBreadcrumbs = "capture_breadcrumbs"
         case captureProbeEvents = "capture_probe_events"
         case immediateClientErrorStatuses = "immediate_client_error_statuses"
+        case immediateClientErrorPathRules = "immediate_client_error_path_rules"
+    }
+}
+
+public struct DebugBundleImmediateClientErrorPathRule: Codable, Sendable, Equatable {
+    public var statusCode: Int
+    public var pathPattern: String
+    public var methods: [String]
+
+    public init(statusCode: Int, pathPattern: String, methods: [String] = []) {
+        self.statusCode = statusCode
+        self.pathPattern = pathPattern
+        self.methods = methods
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case statusCode = "status_code"
+        case pathPattern = "path_pattern"
+        case methods
     }
 }
 
@@ -72,6 +94,7 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
     public var captureBreadcrumbs: DebugBundleCaptureBreadcrumbsMode
     public var captureProbeEvents: DebugBundleCaptureProbeEventsMode
     public var immediateClientErrorStatuses: Set<Int>
+    public var immediateClientErrorPathRules: [DebugBundleImmediateClientErrorPathRule]
 
     public func capturesLog(_ level: DebugBundleLogLevel, localEnabled: Bool, localThreshold: DebugBundleLogLevel) -> Bool {
         guard localEnabled, level >= localThreshold else {
@@ -92,14 +115,18 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
     }
 
     public func capturesStandaloneRequestEvent(_ responseStatus: Int?) -> Bool {
-        if isImmediateRequestIncident(responseStatus) {
+        capturesStandaloneRequestEvent(responseStatus, requestPath: nil, httpMethod: nil)
+    }
+
+    public func capturesStandaloneRequestEvent(_ responseStatus: Int?, requestPath: String?, httpMethod: String?) -> Bool {
+        if isImmediateRequestIncident(responseStatus, requestPath: requestPath, httpMethod: httpMethod) {
             return true
         }
         switch captureRequestEvents {
         case .off:
             return false
         case .failuresOnly:
-            return requestAnomalyCandidate(responseStatus)
+            return responseStatus.map { $0 >= 500 } ?? false
         case .filtered:
             return false
         case .all:
@@ -116,6 +143,10 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
     }
 
     public func isImmediateRequestIncident(_ responseStatus: Int?) -> Bool {
+        isImmediateRequestIncident(responseStatus, requestPath: nil, httpMethod: nil)
+    }
+
+    public func isImmediateRequestIncident(_ responseStatus: Int?, requestPath: String?, httpMethod: String?) -> Bool {
         guard let responseStatus else {
             return false
         }
@@ -123,6 +154,9 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
             return true
         }
         if immediateClientErrorStatuses.contains(responseStatus) {
+            return true
+        }
+        if matchesImmediateClientErrorPathRule(responseStatus, requestPath: requestPath, httpMethod: httpMethod) {
             return true
         }
         switch preset {
@@ -141,7 +175,8 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
         captureRequestEvents: .failuresOnly,
         captureBreadcrumbs: .localOnly,
         captureProbeEvents: .bufferOnly,
-        immediateClientErrorStatuses: []
+        immediateClientErrorStatuses: [],
+        immediateClientErrorPathRules: []
     )
 
     public static let balanced = DebugBundleCapturePolicy(
@@ -150,7 +185,8 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
         captureRequestEvents: .failuresOnly,
         captureBreadcrumbs: .exceptionOnly,
         captureProbeEvents: .bufferOnly,
-        immediateClientErrorStatuses: []
+        immediateClientErrorStatuses: [],
+        immediateClientErrorPathRules: []
     )
 
     public static let investigative = DebugBundleCapturePolicy(
@@ -159,7 +195,8 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
         captureRequestEvents: .all,
         captureBreadcrumbs: .standalone,
         captureProbeEvents: .standaloneWhenActivated,
-        immediateClientErrorStatuses: [401, 403, 409, 422]
+        immediateClientErrorStatuses: [401, 403, 409, 422],
+        immediateClientErrorPathRules: []
     )
 
     public static func defaultWhenConfigFetchFails() -> DebugBundleCapturePolicy {
@@ -182,21 +219,39 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
             captureRequestEvents: DebugBundleCaptureRequestEventsMode(rawValue: policy.captureRequestEvents?.lowercased() ?? "") ?? defaults.captureRequestEvents,
             captureBreadcrumbs: DebugBundleCaptureBreadcrumbsMode(rawValue: policy.captureBreadcrumbs?.lowercased() ?? "") ?? defaults.captureBreadcrumbs,
             captureProbeEvents: DebugBundleCaptureProbeEventsMode(rawValue: policy.captureProbeEvents?.lowercased() ?? "") ?? defaults.captureProbeEvents,
-            immediateClientErrorStatuses: Set(policy.immediateClientErrorStatuses.filter { 400 ... 499 ~= $0 })
+            immediateClientErrorStatuses: Set(policy.immediateClientErrorStatuses.filter { 400 ... 499 ~= $0 }),
+            immediateClientErrorPathRules: policy.immediateClientErrorPathRules.filter { rule in
+                400 ... 499 ~= rule.statusCode &&
+                    isValidPathPattern(rule.pathPattern) &&
+                    rule.methods.count <= 7 &&
+                    rule.methods.allSatisfy { validMethods.contains($0.uppercased()) }
+            }.map { rule in
+                DebugBundleImmediateClientErrorPathRule(
+                    statusCode: rule.statusCode,
+                    pathPattern: rule.pathPattern,
+                    methods: Array(Set(rule.methods.map { $0.uppercased() })).sorted()
+                )
+            }
         )
     }
 
-    private func requestAnomalyCandidate(_ responseStatus: Int?) -> Bool {
-        guard let responseStatus, 400 ..< 500 ~= responseStatus else {
+    private func matchesImmediateClientErrorPathRule(_ responseStatus: Int, requestPath: String?, httpMethod: String?) -> Bool {
+        guard 400 ... 499 ~= responseStatus, let requestPath else {
             return false
         }
-        switch preset {
-        case .minimal:
-            return false
-        case .balanced:
-            return [400, 401, 403, 404, 409, 410, 422].contains(responseStatus)
-        case .investigative:
-            return [400, 401, 403, 404, 409, 410, 422].contains(responseStatus)
+        let normalizedPath = Self.normalizeRequestPath(requestPath)
+        let normalizedMethod = httpMethod?.uppercased()
+        return immediateClientErrorPathRules.contains { rule in
+            guard rule.statusCode == responseStatus else {
+                return false
+            }
+            if !rule.methods.isEmpty && (normalizedMethod == nil || !rule.methods.contains(normalizedMethod!)) {
+                return false
+            }
+            if rule.pathPattern.hasSuffix("*") {
+                return normalizedPath.hasPrefix(String(rule.pathPattern.dropLast()))
+            }
+            return normalizedPath == rule.pathPattern
         }
     }
 
@@ -209,5 +264,25 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
         case .investigative:
             return .investigative
         }
+    }
+
+    private static let validMethods: Set<String> = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+    private static func isValidPathPattern(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 256, value.hasPrefix("/"), !value.contains("?"), !value.contains("#") else {
+            return false
+        }
+        guard let wildcardIndex = value.firstIndex(of: "*") else {
+            return true
+        }
+        return wildcardIndex == value.index(before: value.endIndex)
+    }
+
+    private static func normalizeRequestPath(_ value: String) -> String {
+        if let url = URL(string: value), !url.path.isEmpty {
+            return url.path
+        }
+        let path = value.split(separator: "?", maxSplits: 1).first?.split(separator: "#", maxSplits: 1).first.map(String.init) ?? ""
+        return path.hasPrefix("/") && !path.isEmpty ? path : "/"
     }
 }

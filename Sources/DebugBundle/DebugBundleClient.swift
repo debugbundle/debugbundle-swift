@@ -299,7 +299,11 @@ public final class DebugBundleClient {
 
         let traceId = request.traceId ?? stringValue(from: mergedContext["trace_id"])
         let policy = lock.withLock { capturePolicy }
-        let shouldPromote = policy.capturesStandaloneRequestEvent(response.statusCode)
+        let shouldPromote = policy.capturesStandaloneRequestEvent(
+            response.statusCode,
+            requestPath: request.url,
+            httpMethod: request.method
+        )
         if shouldPromote {
             enqueue(
                 eventType: DebugBundleEventType.requestEvent,
