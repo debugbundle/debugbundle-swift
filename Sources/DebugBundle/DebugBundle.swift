@@ -59,6 +59,32 @@ public final class DebugBundle {
         lock.withLock { client }.probe(label, options: options, producer: producer)
     }
 
+    public static func captureExternalEvent(_ event: [String: Any?]) -> Bool {
+        lock.withLock { client }.captureExternalEvent(event)
+    }
+
+    public static func isExternalProbeActive(_ label: String) -> Bool {
+        lock.withLock { client }.isExternalProbeActive(label)
+    }
+
+    public static func captureExternalProbe(
+        sdkVersion: String,
+        service: String,
+        environment: String,
+        label: String,
+        data: Any?,
+        occurredAt: String
+    ) -> Bool {
+        lock.withLock { client }.captureExternalProbe(
+            sdkVersion: sdkVersion,
+            service: service,
+            environment: environment,
+            label: label,
+            data: data,
+            occurredAt: occurredAt
+        )
+    }
+
     public static func recordBreadcrumb(_ breadcrumbType: String, route: String? = nil, data: [String: Any?] = [:]) {
         lock.withLock { client }.recordBreadcrumb(breadcrumbType: breadcrumbType, route: route, data: data)
     }

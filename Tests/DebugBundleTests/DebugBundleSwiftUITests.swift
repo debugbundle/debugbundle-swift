@@ -1,14 +1,50 @@
 import XCTest
 
 #if canImport(SwiftUI)
+import DebugBundle
 import SwiftUI
 @testable import DebugBundleSwiftUI
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 final class DebugBundleSwiftUITests: XCTestCase {
+    @MainActor
+    @available(iOS 16.0, macOS 13.0, *)
+    func testDefaultRecorderAndViewModifiersRenderSafely() {
+        DebugBundle.initialize(
+            DebugBundleConfig(projectToken: "", enabled: false, service: "disabled")
+        )
+        let recorder = DebugBundleSwiftUILifecycleRecorder()
+        recorder.recordScreen("Checkout", source: "swiftui")
+        recorder.recordScenePhase(.active, screenName: "Checkout")
+        recorder.recordScenePhase(.background, screenName: "Checkout")
+        recorder.recordAction(actionType: "tap", targetType: "button", resourceName: "pay_now")
+
+        let view = Text("Checkout")
+            .debugBundleScreen("Checkout")
+            .debugBundleNavigationScreen("Payment")
+            .debugBundleAction("submit", targetType: "button", resourceName: "pay_now")
+            .modifier(DebugBundleScreenModifier(screenName: "Receipt", recorder: recorder))
+            .modifier(
+                DebugBundleActionModifier(
+                    targetType: "link",
+                    resourceName: "receipt",
+                    recorder: recorder
+                )
+            )
+        let renderer = ImageRenderer(content: view)
+
+#if canImport(UIKit)
+        XCTAssertNotNil(renderer.uiImage)
+#elseif canImport(AppKit)
+        XCTAssertNotNil(renderer.nsImage)
+#endif
+    }
+
     func testLifecycleRecorderMapsScenePhasesAndActions() {
         var events: [String] = []
         let recorder = DebugBundleSwiftUILifecycleRecorder(

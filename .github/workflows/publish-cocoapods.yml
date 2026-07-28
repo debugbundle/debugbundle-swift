@@ -22,6 +22,15 @@ jobs:
             exit 1
           fi
 
+      - name: Run Swift package tests
+        run: make test
+
+      - name: Build Swift package
+        run: make build
+
+      - name: Run clean SPM delivery smoke
+        run: make smoke-spm
+
       - name: Install CocoaPods
         run: |
           if ! command -v pod >/dev/null 2>&1; then
@@ -32,7 +41,22 @@ jobs:
       - name: Lint podspec
         run: make pod-lint
 
+      - name: Run clean CocoaPods delivery smoke
+        run: make smoke-cocoapods
+
       - name: Publish podspec
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: make pod-publish
+
+      - name: Smoke published CocoaPods artifact
+        run: |
+          VERSION="$(ruby -ne 'if $_ =~ /s\.version\s*=\s*"([^"]+)"/; puts $1; exit; end' DebugBundle.podspec)"
+          for attempt in 1 2 3 4 5; do
+            if make smoke-cocoapods-published VERSION="$VERSION"; then
+              exit 0
+            fi
+            echo "Published pod is not consumable yet; retry ${attempt}/5."
+            sleep 30
+          done
+          exit 1

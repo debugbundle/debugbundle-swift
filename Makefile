@@ -1,8 +1,25 @@
 SHELL := /bin/sh
 
 .PHONY: test
-test:
-	swift test
+test: coverage
+
+.PHONY: coverage
+coverage:
+	swift test --enable-code-coverage
+	COVERAGE_PATH="$$(swift test --show-codecov-path)"; \
+	python3 ./scripts/check-coverage.py "$$COVERAGE_PATH"
+
+.PHONY: smoke-spm
+smoke-spm:
+	./scripts/smoke-spm.sh
+
+.PHONY: smoke-cocoapods
+smoke-cocoapods:
+	sh ./scripts/smoke-cocoapods.sh
+
+.PHONY: smoke-cocoapods-published
+smoke-cocoapods-published:
+	sh ./scripts/smoke-cocoapods.sh --published "$(VERSION)"
 
 .PHONY: test-ios-simulator
 test-ios-simulator:

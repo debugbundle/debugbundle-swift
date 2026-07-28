@@ -5,6 +5,52 @@ import DebugBundleTestSupport
 import Foundation
 
 final class DebugBundleCrashReporterTests: XCTestCase {
+    func testEvidenceStoreAndSynchronousCaptureFailClosedAndPreserveResults() throws {
+        struct SampleError: LocalizedError {
+            var errorDescription: String? { "sync failed" }
+        }
+
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("fatal-crash.json")
+        let store = DebugBundleCrashEvidenceStore(fileURL: tempFile)
+        XCTAssertFalse(DebugBundleCrashReporter.replayPendingCrash(store: store, report: { _, _ in }))
+
+        let evidence = DebugBundleCrashEvidence(
+            errorType: "SampleError",
+            message: "first",
+            occurredAt: "2026-05-29T10:00:00Z",
+            stackTrace: (0 ..< 40).map { "Frame\($0)" }
+        )
+        XCTAssertEqual(evidence.threadName, "main")
+        XCTAssertEqual(evidence.stackTrace.count, 32)
+        store.persist(evidence)
+
+        var replacement = evidence
+        replacement.message = "replacement"
+        store.persist(replacement)
+        XCTAssertEqual(store.load()?.message, "replacement")
+        store.clear()
+        store.clear()
+        XCTAssertNil(store.load())
+
+        let successfulValue = try DebugBundleCrashReporter.capture(operation: { 42 })
+        XCTAssertEqual(successfulValue, 42)
+
+        var reportedContext: [String: Any?] = [:]
+        XCTAssertThrowsError(
+            try DebugBundleCrashReporter.capture(
+                context: ["operation": "sync"],
+                report: { _, context in reportedContext = context },
+                operation: { throw SampleError() }
+            )
+        )
+        XCTAssertEqual(reportedContext["operation"] as? String, "sync")
+
+        let exceptionValue = try DebugBundleCrashReporter.captureNSException(operation: { 43 })
+        XCTAssertEqual(exceptionValue, 43)
+    }
+
     func testReplayPendingCrashCapturesExceptionAndClearsStore() async throws {
         let tempFile = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -37,11 +83,11 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["context"]?.objectValue?["fatal_crash"], .bool(true))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["crash_replayed"], .bool(true))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["mechanism"], .string("next_launch_replay"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["thread_name"], .string("main"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["stack_trace"]?.arrayValue?.count, 2)
+        XCTAssertEqual(event.context?["fatal_crash"], .bool(true))
+        XCTAssertEqual(event.context?["crash_replayed"], .bool(true))
+        XCTAssertEqual(event.context?["mechanism"], .string("next_launch_replay"))
+        XCTAssertEqual(event.context?["thread_name"], .string("main"))
+        XCTAssertEqual(event.context?["stack_trace"]?.arrayValue?.count, 2)
     }
 
     func testCaptureAsyncReportsAndRethrows() async throws {
@@ -76,8 +122,13 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["context"]?.objectValue?["operation"], .string("payment_refresh"))
-        XCTAssertEqual(event.payload["error"]?.objectValue?["message"], .string("async failed"))
+        XCTAssertEqual(event.context?["operation"], .string("payment_refresh"))
+        XCTAssertEqual(event.payload["message"], .string("async failed"))
+    }
+
+    func testCaptureAsyncReturnsSuccessfulValue() async throws {
+        let value = try await DebugBundleCrashReporter.captureAsync(operation: { 44 })
+        XCTAssertEqual(value, 44)
     }
 
     func testCaptureNSExceptionReportsAndThrowsBridgedError() async throws {
@@ -110,10 +161,10 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["context"]?.objectValue?["operation"], .string("objc_bridge"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["ns_exception_name"], .string("DBTestException"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["mechanism"], .string("ns_exception"))
-        XCTAssertEqual(event.payload["error"]?.objectValue?["message"], .string("objc failed"))
+        XCTAssertEqual(event.context?["operation"], .string("objc_bridge"))
+        XCTAssertEqual(event.context?["ns_exception_name"], .string("DBTestException"))
+        XCTAssertEqual(event.context?["mechanism"], .string("ns_exception"))
+        XCTAssertEqual(event.payload["message"], .string("objc failed"))
     }
 }
 

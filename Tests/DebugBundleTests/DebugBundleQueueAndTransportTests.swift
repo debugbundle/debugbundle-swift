@@ -293,8 +293,8 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
             let body = try XCTUnwrap(request.httpBody ?? readBody(from: request.httpBodyStream))
             let decoded = try JSONDecoder().decode(DebugBundleBatchRequest.self, from: body)
-            XCTAssertEqual(decoded.batch.count, 1)
-            XCTAssertEqual(decoded.batch.first?.payload["message"], .string("hello"))
+            XCTAssertEqual(decoded.events.count, 1)
+            XCTAssertEqual(decoded.events.first?.payload["message"], .string("hello"))
 
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
@@ -312,6 +312,72 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         XCTAssertEqual(result.statusCode, 429)
         XCTAssertEqual(result.retryAfter, 300)
+    }
+
+    func testHttpTransportDecodesPerEventAcknowledgementAndProbeDirectives() async throws {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [MockURLProtocol.self]
+        let transport = DebugBundleHTTPTransport(
+            session: URLSession(configuration: sessionConfiguration)
+        )
+        let event = DebugBundleEventEnvelope(
+            sdkName: "@debugbundle/sdk-swift",
+            sdkVersion: "1.1.0",
+            service: "checkout-ios",
+            environment: "production",
+            eventType: DebugBundleEventType.logEvent,
+            occurredAt: "2026-05-29T10:00:00Z",
+            correlation: nil,
+            payload: ["message": .string("hello")],
+            device: DebugBundleDeviceContext(),
+            releaseChannel: "unknown",
+            appVersion: nil,
+            buildNumber: nil
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 202,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let body = """
+            {
+              "accepted": 1,
+              "rejected": 1,
+              "errors": [
+                {"index": 1, "reason": "capture_policy_rejected", "retryable": false}
+              ],
+              "probe_directives": {
+                "active_probes": [
+                  {
+                    "activation_id": "act-1",
+                    "label_pattern": "checkout.*",
+                    "service": "checkout-ios",
+                    "environment": "production",
+                    "expires_at": "2036-05-28T10:15:30Z",
+                    "trigger_expires_at": "2036-05-28T10:15:30Z"
+                  }
+                ]
+              }
+            }
+            """
+            return (response, Data(body.utf8))
+        }
+
+        let result = try await transport.send(
+            events: [event],
+            config: DebugBundleConfig(projectToken: "token", service: "checkout-ios")
+        )
+
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertTrue(result.acknowledgementRequired)
+        XCTAssertEqual(result.acknowledgement?.accepted, 1)
+        XCTAssertEqual(result.acknowledgement?.rejected, 1)
+        XCTAssertEqual(result.acknowledgement?.errors.first?.index, 1)
+        XCTAssertEqual(result.acknowledgement?.errors.first?.reason, "capture_policy_rejected")
+        XCTAssertEqual(result.probeDirectives?.first?.activationId, "act-1")
     }
 
     func testRemoteConfigFetchRewritesEventsEndpointPreservingPrefixAndQuery() async {
@@ -475,6 +541,52 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         XCTAssertEqual(adaptedAllowed.value(forHTTPHeaderField: DebugBundleURLSessionInstrumentation.traceHeaderName), "trace-123")
         XCTAssertNil(adaptedBlocked.value(forHTTPHeaderField: DebugBundleURLSessionInstrumentation.traceHeaderName))
+    }
+
+    func testAlamofireMonitorHandlesMissingStateAndNonHTTPCompletions() {
+        var responses: [DebugBundleResponseInfo] = []
+        var currentTime = Date(timeIntervalSince1970: 7_000)
+        let monitor = DebugBundleAlamofireMonitor(
+            recordRequest: { _, response in
+                responses.append(response)
+            },
+            now: { currentTime }
+        )
+        let session = Session(configuration: .ephemeral, startRequestsImmediately: false)
+        let missingStateRequest = session.request("https://api.example.com/missing")
+        let missingStateTask = URLSession.shared.dataTask(
+            with: URL(string: "https://api.example.com/missing")!
+        )
+        monitor.request(missingStateRequest, didCompleteTask: missingStateTask, with: nil)
+
+        let completedRequest = session.request("https://api.example.com/complete")
+        let urlRequest = URLRequest(url: URL(string: "https://api.example.com/complete")!)
+        monitor.request(completedRequest, didCreateURLRequest: urlRequest)
+        currentTime.addTimeInterval(0.025)
+        let completedTask = URLSession.shared.dataTask(with: urlRequest)
+        monitor.request(completedRequest, didCompleteTask: completedTask, with: nil)
+
+        let failedRequest = session.request("https://api.example.com/failed")
+        monitor.request(failedRequest, didCreateURLRequest: urlRequest)
+        currentTime.addTimeInterval(0.025)
+        monitor.request(failedRequest, didCompleteTask: completedTask, with: .explicitlyCancelled)
+
+        XCTAssertEqual(responses.map(\.statusCode), [0, 0])
+        XCTAssertTrue(responses.allSatisfy { (24 ... 25).contains($0.durationMillis ?? -1) })
+    }
+
+    func testAlamofireStringTraceTargetsPreserveHostAndPrefixSemantics() {
+        let session = Session.debugBundleInstrumented(
+            configuration: .ephemeral,
+            tracePropagationTargets: [
+                "https://api.example.com",
+                "https://proxy.example.com/runtime",
+                "assets.example.com"
+            ],
+            startRequestsImmediately: false
+        )
+
+        XCTAssertFalse(session.startRequestsImmediately)
     }
 
     func testInstrumentedURLSessionInjectsTraceHeaderAndRecordsRequestEvent() async throws {

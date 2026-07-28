@@ -48,14 +48,15 @@ final class DebugBundleClientTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        let context = event.payload["context"]?.objectValue
+        let context = event.context
         XCTAssertEqual(context?["authorization"], .string("[REDACTED]"))
         XCTAssertEqual(context?["account_id"], .string("acct_123"))
         XCTAssertEqual(context?["nested"]?.objectValue?["password"], .string("[REDACTED]"))
 
         let breadcrumbs = event.payload["breadcrumbs"]?.arrayValue
         XCTAssertEqual(breadcrumbs?.count, 1)
-        XCTAssertEqual(event.payload["probe_data"]?.objectValue?["checkout.cart"]?.arrayValue?.first?.objectValue?["password"], .string("[REDACTED]"))
+        let probeItems = event.payload["probe_data"]?.objectValue?["items"]?.arrayValue
+        XCTAssertEqual(probeItems?.first?.objectValue?["data"]?.objectValue?["password"], .string("[REDACTED]"))
         XCTAssertEqual(event.device.releaseChannel, "app-store")
         XCTAssertEqual(client.status, .healthy)
     }
@@ -86,8 +87,8 @@ final class DebugBundleClientTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["context"]?.objectValue?["operation"], .string("payment_refresh"))
-        XCTAssertEqual(event.payload["error"]?.objectValue?["message"], .string("async failed"))
+        XCTAssertEqual(event.context?["operation"], .string("payment_refresh"))
+        XCTAssertEqual(event.payload["message"], .string("async failed"))
     }
 
     func testCaptureTaskReportsErrorAndReturnsNil() async throws {
@@ -113,7 +114,7 @@ final class DebugBundleClientTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["error"]?.objectValue?["message"], .string("task failed"))
+        XCTAssertEqual(event.payload["message"], .string("task failed"))
     }
 
     func testRequestCaptureFiltersHeadersAndPromotesServerErrors() async throws {
@@ -221,7 +222,7 @@ final class DebugBundleClientTests: XCTestCase {
         XCTAssertEqual(suppressedEvents.count, 9)
         XCTAssertEqual(trailingSuppressedCounts, [.number(8), .number(10)])
         XCTAssertEqual(events.last?.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(events.last?.payload["error"]?.objectValue?["message"], .string("looping failure"))
+        XCTAssertEqual(events.last?.payload["message"], .string("looping failure"))
     }
 
     func testRemoteCapturePolicySuppressesWarningLogsWhenServerRequiresErrorsOnly() async throws {
@@ -339,7 +340,7 @@ final class DebugBundleClientTests: XCTestCase {
 
         let events = await transport.recordedBatches().flatMap { $0 }
         XCTAssertEqual(events.map(\.eventType), [DebugBundleEventType.requestEvent])
-        XCTAssertEqual(events.first?.payload["url"], .string("/checkout/cart"))
+        XCTAssertEqual(events.first?.payload["path"], .string("/checkout/cart"))
     }
 
     func testStandaloneBreadcrumbPolicyEmitsFrontendBreadcrumbEvents() async throws {
@@ -505,10 +506,87 @@ final class DebugBundleClientTests: XCTestCase {
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.logEvent)
         XCTAssertEqual(event.payload["message"], .string("payment failed"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["logger_label"], .string("checkout"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["request_id"], .string("req-123"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["authorization"], .string("[REDACTED]"))
-        XCTAssertEqual(event.payload["context"]?.objectValue?["checkout_step"], .string("review"))
+        let attributes = event.payload["attributes"]?.objectValue
+        XCTAssertEqual(attributes?["logger_label"], .string("checkout"))
+        XCTAssertEqual(attributes?["request_id"], .string("req-123"))
+        XCTAssertEqual(attributes?["authorization"], .string("[REDACTED]"))
+        XCTAssertEqual(attributes?["checkout_step"], .string("review"))
+    }
+
+    func testSwiftLogHandlerCoversLevelsMetadataErrorsAndRecursionSafety() {
+        struct SampleLogError: Error, CustomStringConvertible {
+            var description: String { "sample-log-error" }
+        }
+
+        var captured: [(DebugBundleLogLevel, String, [String: Any?])] = []
+        var handler = DebugBundleLogHandler(
+            label: "direct",
+            logLevel: .debug,
+            metadata: [
+                "base": "value",
+                "convertible": .stringConvertible(42),
+                "array": .array(["one", "two"]),
+                "dictionary": .dictionary(["nested": "yes"])
+            ],
+            emit: { level, message, context in
+                captured.append((level, message, context))
+            }
+        )
+
+        XCTAssertEqual(handler[metadataKey: "base"]?.description, "value")
+        handler[metadataKey: "added"] = "metadata"
+        handler.log(
+            level: .trace,
+            message: "below-threshold",
+            metadata: nil,
+            source: "tests",
+            file: "/tmp/Test.swift",
+            function: "test()",
+            line: 10
+        )
+        for level in [Logger.Level.debug, .info, .notice, .warning, .error, .critical] {
+            handler.log(
+                level: level,
+                message: "level-\(level)",
+                metadata: ["base": "override"],
+                source: "tests",
+                file: "/tmp/Test.swift",
+                function: "test()",
+                line: 20
+            )
+        }
+        handler.log(
+            event: LogEvent(
+                level: .error,
+                message: "event-error",
+                error: SampleLogError(),
+                metadata: nil,
+                source: "tests",
+                file: "/tmp/Event.swift",
+                function: "event()",
+                line: 30
+            )
+        )
+
+        Thread.current.threadDictionary["com.debugbundle.swiftlog.recursing"] = true
+        handler.log(
+            level: .error,
+            message: "recursive",
+            metadata: nil,
+            source: "tests",
+            file: "/tmp/Test.swift",
+            function: "test()",
+            line: 40
+        )
+        Thread.current.threadDictionary.removeObject(forKey: "com.debugbundle.swiftlog.recursing")
+
+        XCTAssertEqual(captured.map(\.0), [.debug, .info, .info, .warning, .error, .error, .error])
+        XCTAssertEqual(captured.first?.2["base"] as? String, "override")
+        XCTAssertEqual(captured.first?.2["convertible"] as? String, "42")
+        XCTAssertEqual(captured.first?.2["array"] as? [String], ["one", "two"])
+        XCTAssertEqual((captured.first?.2["dictionary"] as? [String: Any])?["nested"] as? String, "yes")
+        XCTAssertEqual(captured.first?.2["file"] as? String, "Test.swift")
+        XCTAssertEqual(captured.last?.2["error"] as? String, "sample-log-error")
     }
 
     func testOpportunisticRemoteConfigRefreshUsesBoundedIntervalForFlushAndForeground() async {

@@ -1,4 +1,5 @@
 import XCTest
+import DebugBundle
 @testable import DebugBundleUIKit
 
 #if canImport(UIKit)
@@ -6,6 +7,21 @@ import UIKit
 #endif
 
 final class DebugBundleUIKitTests: XCTestCase {
+    func testDefaultLifecycleRecorderAndPlatformFallbackRemainSafe() {
+        DebugBundle.initialize(
+            DebugBundleConfig(projectToken: "", enabled: false, service: "disabled")
+        )
+        let recorder = DebugBundleUIKitLifecycleRecorder()
+        recorder.recordAppForeground()
+        recorder.recordAppBackground()
+        recorder.recordSceneForeground("Checkout")
+        recorder.recordSceneBackground("Checkout")
+
+#if !canImport(UIKit)
+        _ = DebugBundleNavigationDelegate()
+#endif
+    }
+
     func testLifecycleRecorderMapsUIKitLifecycleEvents() {
         var breadcrumbs: [(String, Int?)] = []
         var screens: [String] = []

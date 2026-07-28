@@ -19,6 +19,18 @@ jobs:
       - name: Build Swift package
         run: make build
 
+      - name: Run clean SPM delivery smoke
+        run: make smoke-spm
+
+      - name: Install CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+
+      - name: Run clean CocoaPods delivery smoke
+        run: make smoke-cocoapods
+
   ios-simulator:
     runs-on: macos-15
     steps:
@@ -27,3 +39,10 @@ jobs:
 
       - name: Run iOS simulator tests
         run: make test-ios-simulator
+
+      - name: Compile against the iOS 15 deployment target
+        run: |
+          xcodebuild build \
+            -scheme debugbundle-swift-Package \
+            -destination 'generic/platform=iOS Simulator' \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0

@@ -7,6 +7,10 @@ public enum DebugBundleFileProtection: String, Sendable {
     case none
 }
 
+public typealias DebugBundleBeforeSend = @Sendable (
+    DebugBundleEventEnvelope
+) -> DebugBundleEventEnvelope?
+
 public struct DebugBundleConfig: Sendable {
     public static let defaultEndpoint = URL(string: "https://api.debugbundle.com/v1/events")!
 
@@ -77,6 +81,7 @@ public struct DebugBundleConfig: Sendable {
     public var redactFields: Set<String>
     public var headerAllowlist: Set<String>
     public var sdkVersion: String
+    public var beforeSend: DebugBundleBeforeSend?
 
     public init(
         projectToken: String = "",
@@ -110,7 +115,8 @@ public struct DebugBundleConfig: Sendable {
         probeFlushOnError: Bool = true,
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
-        sdkVersion: String = "1.1.0"
+        sdkVersion: String = "1.2.0",
+        beforeSend: DebugBundleBeforeSend? = nil
     ) {
         self.projectToken = projectToken
         self.enabled = enabled
@@ -146,5 +152,6 @@ public struct DebugBundleConfig: Sendable {
             result.insert(value)
         }
         self.sdkVersion = sdkVersion
+        self.beforeSend = beforeSend
     }
 }
