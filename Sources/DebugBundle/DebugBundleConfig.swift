@@ -115,7 +115,7 @@ public struct DebugBundleConfig: Sendable {
         probeFlushOnError: Bool = true,
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
-        sdkVersion: String = "1.2.0",
+        sdkVersion: String = "1.3.0",
         beforeSend: DebugBundleBeforeSend? = nil
     ) {
         self.projectToken = projectToken

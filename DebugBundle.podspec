@@ -1,9 +1,9 @@
 Pod::Spec.new do |s|
   s.name         = "DebugBundle"
-  s.version      = "1.2.0"
+  s.version      = "1.3.0"
   s.summary      = "Native DebugBundle SDK for iOS apps."
   s.description  = "Core DebugBundle client, queueing, transport, redaction, capture policy, and probes for iOS apps."
-  s.license      = { :type => "AGPL-3.0-only" }
+  s.license      = { :type => "Apache-2.0", :file => "LICENSE" }
   s.author       = { "DebugBundle" => "support@debugbundle.com" }
   s.homepage     = "https://github.com/debugbundle/debugbundle-swift"
   s.source       = { :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v#{s.version}" }

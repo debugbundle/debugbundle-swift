@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-09-12
+
+### Changed
+
+- License first-party SDK code under Apache-2.0 and ship consistent package licensing metadata and license text.
+
 ## Unreleased
 
 ## 1.2.0 - 2026-07-28
