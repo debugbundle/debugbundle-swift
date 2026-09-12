@@ -22,8 +22,8 @@ test_source = <<~SWIFT
               .appendingPathComponent("debugbundle-swift-pod-smoke-\\(UUID().uuidString).json")
           defer { try? FileManager.default.removeItem(at: queueURL) }
 
-          let client = DebugBundle.initialize(
-              DebugBundleConfig(
+          let client = DebugBundleClient(
+              config: DebugBundleConfig(
                   projectToken: "dbundle_proj_swift_smoke",
                   environment: "smoke",
                   service: "swift-cocoapods-smoke",
@@ -33,7 +33,8 @@ test_source = <<~SWIFT
                   requestTimeout: 5,
                   offlineQueueURL: queueURL
               ),
-              transport: DebugBundleHTTPTransport()
+              transport: DebugBundleHTTPTransport(),
+              connectivityMonitor: SmokeConnectivityMonitor()
           )
 
           client.captureException(
@@ -53,6 +54,12 @@ test_source = <<~SWIFT
           XCTAssertEqual(client.status, .healthy)
           XCTAssertNotNil(client.lastEventAt)
       }
+  }
+
+  // Keep the two-event HTTP fixture independent of simulator path-change callbacks.
+  private final class SmokeConnectivityMonitor: DebugBundleConnectivityMonitoring {
+      var currentStatus: DebugBundleConnectivityStatus { .connected }
+      func setUpdateHandler(_ handler: (@Sendable (DebugBundleConnectivityStatus) -> Void)?) {}
   }
 
   private struct CocoaPodsSmokeFailure: Error {

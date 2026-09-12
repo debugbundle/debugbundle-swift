@@ -118,7 +118,7 @@ final class DebugBundleAcknowledgementTests: XCTestCase {
             transport: transport,
             queueStore: queue,
             remoteConfigClient: AcknowledgementRemoteConfigClient(),
-            connectivityMonitor: nil,
+            connectivityMonitor: AcknowledgementConnectivityMonitor(),
             clock: { Date(timeIntervalSince1970: 1_800_000_000) },
             random: { 0 }
         )
@@ -156,4 +156,10 @@ private struct AcknowledgementRemoteConfigClient: DebugBundleRemoteConfigClienti
     func fetch(request _: DebugBundleRemoteConfigRequest) async -> DebugBundleRemoteConfigResult {
         .notModified(eTag: nil)
     }
+}
+
+// A real path monitor can flush a partial batch before the fixed acknowledgement fixture.
+private final class AcknowledgementConnectivityMonitor: DebugBundleConnectivityMonitoring {
+    var currentStatus: DebugBundleConnectivityStatus { .connected }
+    func setUpdateHandler(_ handler: (@Sendable (DebugBundleConnectivityStatus) -> Void)?) {}
 }
