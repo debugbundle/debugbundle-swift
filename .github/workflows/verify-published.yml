@@ -1,0 +1,27 @@
+name: Verify Published Swift SDK
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published CocoaPods version to verify
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+      - name: Verify published artifact in a clean consumer
+        env:
+          VERSION: ${{ inputs.version }}
+        run: make smoke-cocoapods-published VERSION="$VERSION"

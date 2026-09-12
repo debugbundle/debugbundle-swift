@@ -56,7 +56,11 @@ target 'DebugBundlePodSmokeTests' do
 end
 EOF
 
-pod install --project-directory="$SMOKE_DIR"
+if [ -n "$PUBLISHED_VERSION" ]; then
+  pod install --repo-update --project-directory="$SMOKE_DIR"
+else
+  pod install --project-directory="$SMOKE_DIR"
+fi
 
 DEBUGBUNDLE_SMOKE_EVENTS_FILE="$EVENTS_FILE" \
 DEBUGBUNDLE_SMOKE_PORT="$PORT" \
