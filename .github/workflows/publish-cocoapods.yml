@@ -47,7 +47,23 @@ jobs:
       - name: Publish podspec
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-        run: make pod-publish
+        run: |
+          set -o pipefail
+          VERSION="$(ruby -ne 'if $_ =~ /s\.version\s*=\s*"([^"]+)"/; puts $1; exit; end' DebugBundle.podspec)"
+          if make pod-publish; then
+            exit 0
+          fi
+
+          echo "CocoaPods client reported a publish failure; checking the registry before failing the release."
+          for attempt in 1 2 3 4 5; do
+            if pod trunk info DebugBundle | grep -Eq "^[[:space:]]+- ${VERSION} \\("; then
+              echo "CocoaPods ${VERSION} is published despite the client-side failure."
+              exit 0
+            fi
+            echo "Published pod is not visible yet; retry ${attempt}/5."
+            sleep 15
+          done
+          exit 1
 
       - name: Smoke published CocoaPods artifact
         run: |
