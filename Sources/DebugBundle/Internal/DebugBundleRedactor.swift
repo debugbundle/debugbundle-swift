@@ -5,6 +5,7 @@ struct DebugBundleRedactor {
     private let maxDepth: Int
     private let maxCollectionCount: Int
     private let maxStringLength: Int
+    private let privacy: DebugBundleTelemetryPrivacy
 
     init(
         sensitiveKeys: Set<String>,
@@ -16,16 +17,24 @@ struct DebugBundleRedactor {
         self.maxDepth = maxDepth
         self.maxCollectionCount = maxCollectionCount
         self.maxStringLength = maxStringLength
+        self.privacy = DebugBundleTelemetryPrivacy(additionalFields: sensitiveKeys)
     }
 
     func sanitize(_ value: Any?) -> JSONValue {
-        sanitize(value, key: nil, depth: 0, visited: NSHashTable<AnyObject>.weakObjects())
+        privacy.protect(sanitize(value, key: nil, depth: 0, visited: NSHashTable<AnyObject>.weakObjects()))
+    }
+
+    func sanitizeJSON(_ value: JSONValue) -> JSONValue {
+        privacy.protect(value)
     }
 
     func sanitizeDictionary(_ dictionary: [String: Any?]) -> [String: JSONValue] {
-        dictionary.reduce(into: [String: JSONValue]()) { result, entry in
+        if dictionary.count > maxCollectionCount { return ["_redacted": .string("[REDACTED]")] }
+        let converted = dictionary.reduce(into: [String: JSONValue]()) { result, entry in
             result[entry.key] = sanitize(entry.value, key: entry.key, depth: 0, visited: NSHashTable<AnyObject>.weakObjects())
         }
+        if case let .object(safe) = privacy.protect(.object(converted)) { return safe }
+        return ["_redacted": .string("[REDACTED]")]
     }
 
     func filterHeaders(_ headers: [String: String], allowlist: Set<String>) -> [String: JSONValue] {
@@ -38,6 +47,7 @@ struct DebugBundleRedactor {
     }
 
     private func sanitize(_ value: Any?, key: String?, depth: Int, visited: NSHashTable<AnyObject>) -> JSONValue {
+        if let key, key.utf8.prefix(129).count > 128 { return .string("[REDACTED]") }
         if let key, isSensitive(key) {
             return .string("[REDACTED]")
         }
@@ -50,10 +60,10 @@ struct DebugBundleRedactor {
             return .null
         }
 
+        if let json = value as? JSONValue { return json }
         if let stringValue = value as? String {
-            if stringValue.count > maxStringLength {
-                let endIndex = stringValue.index(stringValue.startIndex, offsetBy: maxStringLength)
-                return .string(String(stringValue[..<endIndex]) + "…")
+            if stringValue.prefix(maxStringLength + 1).count > maxStringLength {
+                return .string("[REDACTED]")
             }
             return .string(stringValue)
         }
@@ -105,24 +115,18 @@ struct DebugBundleRedactor {
         }
 
         if let dictionaryValue = value as? [String: Any?] {
+            if dictionaryValue.count > maxCollectionCount { return .string("[REDACTED]") }
             let limited = dictionaryValue.prefix(maxCollectionCount)
             let object = limited.reduce(into: [String: JSONValue]()) { result, entry in
                 result[entry.key] = sanitize(entry.value, key: entry.key, depth: depth + 1, visited: visited)
-            }
-            if dictionaryValue.count > maxCollectionCount {
-                var truncated = object
-                truncated["_truncated_keys"] = .number(Double(dictionaryValue.count - maxCollectionCount))
-                return .object(truncated)
             }
             return .object(object)
         }
 
         if let arrayValue = value as? [Any?] {
+            if arrayValue.count > maxCollectionCount { return .string("[REDACTED]") }
             let limited = Array(arrayValue.prefix(maxCollectionCount))
-            var array = limited.map { sanitize($0, key: nil, depth: depth + 1, visited: visited) }
-            if arrayValue.count > maxCollectionCount {
-                array.append(.string("[TRUNCATED]"))
-            }
+            let array = limited.map { sanitize($0, key: nil, depth: depth + 1, visited: visited) }
             return .array(array)
         }
 

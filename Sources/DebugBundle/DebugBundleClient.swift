@@ -49,7 +49,9 @@ public final class DebugBundleClient {
         self.transport = transport ?? DebugBundleHTTPTransport()
         self.queueStore = queueStore ?? DebugBundleFileQueueStore(
             fileURL: debugBundleDefaultQueueURL(for: config),
-            fileProtection: config.fileProtection
+            fileProtection: config.fileProtection,
+            maxReadBytes: config.offlineQueueMaxBytes > Int.max - 64 * 1024
+                ? Int.max : config.offlineQueueMaxBytes + 64 * 1024
         )
         self.remoteConfigClient = remoteConfigClient ?? DebugBundleHTTPRemoteConfigClient()
         self.connectivityMonitor = connectivityMonitor ?? debugBundleDefaultConnectivityMonitor()
@@ -74,7 +76,15 @@ public final class DebugBundleClient {
         self.redactor = DebugBundleRedactor(sensitiveKeys: config.redactFields)
         self.statusValue = config.enabled && !config.projectToken.isEmpty ? .healthy : .disconnected
         self.sessionSampledIn = config.enabled && !config.projectToken.isEmpty && (config.sessionSampleRate >= 1 || random() <= config.sessionSampleRate)
-        self.buffer = self.queueStore.load(now: clock(), ttl: config.offlineQueueTtl)
+        let activeRedactor = self.redactor
+        (self.queueStore as? DebugBundleFileQueueStore)?.installPrivacyTransformer {
+            protectDebugBundleEvent($0, redactor: activeRedactor)
+        }
+        let recovered = self.queueStore.load(now: clock(), ttl: config.offlineQueueTtl)
+        self.buffer = recovered.compactMap { protectDebugBundleEvent($0, redactor: activeRedactor) }
+        if !(self.queueStore is DebugBundleFileQueueStore) {
+            self.queueStore.persist(self.buffer)
+        }
         self.connectivityMonitor?.setUpdateHandler { [weak self] status in
             guard status == .connected else {
                 return
@@ -298,8 +308,10 @@ public final class DebugBundleClient {
     }
 
     public func setContext(_ key: String, value: Any?) {
+        let safe = redactor.sanitizeDictionary([key: value])
         lock.withLock {
-            persistentContext[key] = value
+            guard persistentContext[key] != nil || persistentContext.count < 50 else { return }
+            persistentContext[key] = safe[key]
         }
     }
 
@@ -308,7 +320,7 @@ public final class DebugBundleClient {
     }
 
     public func probe(_ label: String, options: ProbeOptions = ProbeOptions(), producer: () -> Any?) {
-        guard !label.isEmpty, remoteProbeState.probesAreEnabled() else {
+        guard !label.isEmpty, redactor.sanitize(label) == .string(label), remoteProbeState.probesAreEnabled() else {
             return
         }
         let matchingDirectives = remoteProbeState.matchingDirectives(
@@ -417,14 +429,19 @@ public final class DebugBundleClient {
 
     public func recordBreadcrumb(breadcrumbType: String, route: String? = nil, data: [String: Any?] = [:]) {
         let sanitizedData = redactor.sanitizeDictionary(data)
+        guard case let .string(safeType) = redactor.sanitize(breadcrumbType) else { return }
+        let safeRoute = route.flatMap { value -> String? in
+            guard case let .string(cleaned) = redactor.sanitize(value) else { return nil }
+            return cleaned
+        }
         let breadcrumb = lock.withLock { () -> DebugBundleBreadcrumb? in
             guard shouldCapture(countTowardSession: true) else {
                 return nil
             }
             let breadcrumb = DebugBundleBreadcrumb(
                 occurredAt: debugBundleTimestamp(clock()),
-                breadcrumbType: breadcrumbType,
-                route: route,
+                breadcrumbType: safeType,
+                route: safeRoute,
                 data: sanitizedData
             )
             breadcrumbs.append(breadcrumb)
@@ -565,7 +582,9 @@ public final class DebugBundleClient {
         guard config.enabled, !config.projectToken.isEmpty else {
             return false
         }
-        guard let event = applyDebugBundleBeforeSend(authoredEvent, hook: config.beforeSend) else {
+        guard let beforeHook = protectDebugBundleEvent(authoredEvent, redactor: redactor),
+              let hooked = applyDebugBundleBeforeSend(beforeHook, hook: config.beforeSend),
+              let event = protectDebugBundleEvent(hooked, redactor: redactor) else {
             return false
         }
         let countTowardSession = debugBundleExternalEventCountsTowardSession(event.eventType)
@@ -602,8 +621,9 @@ public final class DebugBundleClient {
                 windowSeconds: windowSeconds,
                 occurredAt: debugBundleTimestamp(now)
             )
-            guard let preparedAggregate = applyDebugBundleBeforeSend(
-                aggregate,
+            guard let safeAggregate = protectDebugBundleEvent(aggregate, redactor: redactor),
+                  let preparedAggregate = applyDebugBundleBeforeSend(
+                safeAggregate,
                 hook: config.beforeSend
             ) else {
                 return false
@@ -616,12 +636,13 @@ public final class DebugBundleClient {
         _ envelope: DebugBundleEventEnvelope,
         countTowardSession: Bool
     ) -> Bool {
+        guard let safeEnvelope = protectDebugBundleEvent(envelope, redactor: redactor) else { return false }
         var shouldFlushImmediately = false
         let appended = lock.withLock { () -> Bool in
             guard shouldCapture(countTowardSession: countTowardSession) else {
                 return false
             }
-            buffer.append(envelope)
+            buffer.append(safeEnvelope)
             trimBufferToConfiguredBoundsLocked()
             if countTowardSession {
                 sessionEventCount += 1

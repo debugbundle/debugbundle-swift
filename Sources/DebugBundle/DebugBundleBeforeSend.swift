@@ -14,7 +14,7 @@ func applyDebugBundleBeforeSend(
     return isValidBeforeSendEvent(result) ? result : event
 }
 
-private func isValidBeforeSendEvent(_ event: DebugBundleEventEnvelope) -> Bool {
+func isValidBeforeSendEvent(_ event: DebugBundleEventEnvelope) -> Bool {
     guard
         event.schemaVersion == "2026-03-01",
         UUID(uuidString: event.eventId) != nil,

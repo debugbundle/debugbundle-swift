@@ -4,6 +4,45 @@ import XCTest
 import DebugBundleTestSupport
 
 final class DebugBundleBeforeSendTests: XCTestCase {
+    func testContextIsCopiedBeforeRetentionAndServiceMetadataIsProtected() async {
+        let transport = RecordingTransport()
+        let client = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
+            beforeSend: { event in
+                var changed = event
+                changed.serviceRuntime = "dbundle_proj_RUNTIME_SECRET"
+                changed.serviceFramework = "token=FRAMEWORK_SECRET"
+                return changed
+            }), transport: transport, connectivityMonitor: nil, random: { 0 })
+        let context = NSMutableDictionary(dictionary: ["route": "/checkout", "password": "CONTEXT_SECRET"])
+        client.setContext("checkout", value: context)
+        context["route"] = "/changed-after-retention"
+        client.captureLog("safe", level: .error)
+        await client.flush()
+        let event = await transport.recordedBatches().flatMap { $0 }.first
+        XCTAssertEqual(event?.serviceRuntime, "[REDACTED]")
+        XCTAssertEqual(event?.serviceFramework, "token=[REDACTED]")
+        let checkout = event?.payload["attributes"]?.objectValue?["checkout"]?.objectValue
+        XCTAssertEqual(checkout?["route"], .string("/checkout"))
+        XCTAssertEqual(checkout?["password"], .string("[REDACTED]"))
+    }
+
+    func testHookCannotReintroduceCredentialsThroughProtocolMetadata() async {
+        let transport = RecordingTransport()
+        let client = DebugBundleClient(
+            config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
+                beforeSend: { event in
+                    var changed = event
+                    changed.sdkVersion = "dbundle_proj_SYNTHETIC_SECRET"
+                    return changed
+                }),
+            transport: transport, connectivityMonitor: nil, random: { 0 }
+        )
+        client.captureLog("safe", level: .error)
+        await client.flush()
+        let events = await transport.recordedBatches().flatMap { $0 }
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testBeforeSendValidatesEveryClosedEventPayload() {
         let base = DebugBundleEventEnvelope(
             sdkName: "@debugbundle/sdk-swift",
@@ -192,6 +231,41 @@ final class DebugBundleBeforeSendTests: XCTestCase {
         XCTAssertNotEqual(try XCTUnwrap(events.last).eventId, "invalid")
     }
 
+    func testBeforeSendCannotReintroduceCredentialText() async {
+        let transport = RecordingTransport()
+        let client = DebugBundleClient(
+            config: DebugBundleConfig(
+                projectToken: "token",
+                service: "checkout-ios",
+                batchSize: 10,
+                beforeSend: { event in
+                    var changed = event
+                    changed.payload["message"] = .string("Failure token=hook-secret")
+                    return changed
+                }
+            ),
+            transport: transport,
+            connectivityMonitor: nil,
+            random: { 0 }
+        )
+        client.captureLog("original", level: .error)
+        await client.flush()
+        let events = await transport.recordedBatches().flatMap { $0 }
+        XCTAssertEqual(events.first?.payload["message"], .string("Failure token=[REDACTED]"))
+    }
+
+    func testLogFingerprintIgnoresCaptureTimeButRetainsApplicationContext() {
+        let first: [String: JSONValue] = ["level": .string("error"), "message": .string("duplicate"),
+            "attributes": .object(["logged_at": .string("2026-09-21T00:00:00Z"), "route": .string("/checkout")])]
+        var later = first
+        later["attributes"] = .object(["logged_at": .string("2026-09-21T00:00:01Z"), "route": .string("/checkout")])
+        XCTAssertEqual(debugBundleFingerprint(eventType: DebugBundleEventType.logEvent, payload: first),
+                       debugBundleFingerprint(eventType: DebugBundleEventType.logEvent, payload: later))
+        later["attributes"] = .object(["route": .string("/orders")])
+        XCTAssertNotEqual(debugBundleFingerprint(eventType: DebugBundleEventType.logEvent, payload: first),
+                          debugBundleFingerprint(eventType: DebugBundleEventType.logEvent, payload: later))
+    }
+
     func testBeforeSendAppliesToSuppressionAggregates() async {
         let transport = RecordingTransport()
         let client = DebugBundleClient(
@@ -224,7 +298,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
         let events = await transport.recordedBatches().flatMap { $0 }
         let aggregate = events.first { $0.eventType == DebugBundleEventType.errorSuppressed }
-        XCTAssertEqual(aggregate?.payload["fingerprint"], .string("hooked-aggregate"))
+        XCTAssertEqual(aggregate?.payload["fingerprint"], .string("hooked-aggregate"), "Captured: \(events.map { ($0.eventType, debugBundleFingerprint(eventType: $0.eventType, payload: $0.payload)) })")
     }
 }
 

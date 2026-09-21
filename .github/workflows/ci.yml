@@ -45,4 +45,13 @@ jobs:
           xcodebuild build \
             -scheme debugbundle-swift-Package \
             -destination 'generic/platform=iOS Simulator' \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0
+          IPHONEOS_DEPLOYMENT_TARGET=15.0
+
+  current-apple-platform:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v5
+      - name: Record current Apple toolchain
+        run: xcodebuild -version && swift --version
+      - name: Verify Swift package and iOS simulator
+        run: make test && make test-ios-simulator && make smoke-spm

@@ -13,10 +13,14 @@ func debugBundleFingerprint(
             "message": error["message"] ?? payload["message"] ?? .string("")
         ])
     case DebugBundleEventType.logEvent:
+        // Canonicalization keeps the capture timestamp in attributes for diagnosis, but
+        // duplicate detection must remain stable across capture times.
+        var attributes = (payload["context"] ?? payload["attributes"])?.objectValue ?? [:]
+        attributes.removeValue(forKey: "logged_at")
         stablePayload = .object([
             "level": payload["level"] ?? .string(""),
             "message": payload["message"] ?? .string(""),
-            "context": payload["context"] ?? payload["attributes"] ?? .object([:])
+            "context": .object(attributes)
         ])
     case DebugBundleEventType.requestEvent:
         stablePayload = .object([

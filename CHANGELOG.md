@@ -2,13 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [2.0.0] - 2026-09-21
+
+### Security
+
+- Enforce `telemetry-privacy-v1` before and after capture hooks, during file-queue recovery, and before buffered transport. Unsafe historical records are withheld while valid remote probe activation remains compatible.
+
 ## [1.3.0] - 2026-09-12
 
 ### Changed
 
 - License first-party SDK code under Apache-2.0 and ship consistent package licensing metadata and license text.
-
-## Unreleased
 
 ## 1.2.0 - 2026-07-28
 
