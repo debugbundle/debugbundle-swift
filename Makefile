@@ -27,10 +27,11 @@ smoke-cocoapods-published:
 	sh ./scripts/smoke-cocoapods.sh --published "$(VERSION)"
 
 .PHONY: test-ios-simulator
+# Shared macOS runners can starve utility-queue work when XCTest clones simulators.
 test-ios-simulator:
 	DESTINATION="$${IOS_SIMULATOR_DESTINATION:-$$(sh ./scripts/resolve-ios-simulator-destination.sh)}"; \
 	echo "Using iOS simulator destination: $$DESTINATION"; \
-	xcodebuild test -scheme debugbundle-swift-Package -destination "$$DESTINATION"
+	xcodebuild test -scheme debugbundle-swift-Package -destination "$$DESTINATION" -parallel-testing-enabled NO
 
 .PHONY: build-ios-15
 build-ios-15:
