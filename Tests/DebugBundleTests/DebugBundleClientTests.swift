@@ -7,7 +7,7 @@ import Logging
 final class DebugBundleClientTests: XCTestCase {
     func testMissingTokenLeavesClientDisconnectedAndSilent() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "", enabled: true, service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -23,7 +23,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testCaptureExceptionRedactsSensitiveContextAndAttachesBreadcrumbsAndProbes() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 },
@@ -67,7 +67,7 @@ final class DebugBundleClientTests: XCTestCase {
         }
 
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -97,7 +97,7 @@ final class DebugBundleClientTests: XCTestCase {
         }
 
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -119,7 +119,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testRequestCaptureFiltersHeadersAndPromotesServerErrors() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -160,7 +160,7 @@ final class DebugBundleClientTests: XCTestCase {
     func testDuplicateSuppressionEmitsAggregateAfterThirdIdenticalEvent() async throws {
         let transport = RecordingTransport()
         let fixedDate = Date(timeIntervalSince1970: 1_000)
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             clock: { fixedDate },
@@ -188,7 +188,7 @@ final class DebugBundleClientTests: XCTestCase {
         let transport = RecordingTransport()
         var currentTime = Date(timeIntervalSince1970: 1_000)
         let error = NSError(domain: "Loop", code: 42, userInfo: [NSLocalizedDescriptionKey: "looping failure"])
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 100),
             transport: transport,
             clock: { currentTime },
@@ -227,7 +227,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testRemoteCapturePolicySuppressesWarningLogsWhenServerRequiresErrorsOnly() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -259,7 +259,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testRequestPolicyOffSuppressesStandaloneRequestEventButRetainsBreadcrumbForException() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -295,7 +295,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testImmediateClientErrorPathRulesPromoteOnlyValidConfiguredMethods() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -345,7 +345,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testStandaloneBreadcrumbPolicyEmitsFrontendBreadcrumbEvents() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -378,7 +378,7 @@ final class DebugBundleClientTests: XCTestCase {
     func testActivatedRemoteProbeEmitsStandaloneProbeEventAndHeavyProbeRunsOnlyWhenActivated() async throws {
         let transport = RecordingTransport()
         let expiry = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 4_000))
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", environment: "production", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -429,7 +429,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testLifecycleHelpersAttachScreenAppAndActionBreadcrumbsToException() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", captureActions: true),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -468,7 +468,7 @@ final class DebugBundleClientTests: XCTestCase {
 
     func testSwiftLogHandlerCapturesStructuredLogEvent() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -605,7 +605,7 @@ final class DebugBundleClientTests: XCTestCase {
             eTag: "tag-1"
         ))
         var currentTime = Date(timeIntervalSince1970: 10_000)
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: remoteConfigClient,

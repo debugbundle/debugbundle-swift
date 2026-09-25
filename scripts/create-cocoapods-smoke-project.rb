@@ -30,10 +30,11 @@ test_source = <<~SWIFT
                   endpoint: endpoint,
                   batchSize: 25,
                   flushInterval: 60,
-                  requestTimeout: 5,
+                  requestTimeout: 10,
                   offlineQueueURL: queueURL
               ),
               transport: DebugBundleHTTPTransport(),
+              remoteConfigClient: SmokeRemoteConfigClient(),
               connectivityMonitor: SmokeConnectivityMonitor()
           )
 
@@ -60,6 +61,14 @@ test_source = <<~SWIFT
   private final class SmokeConnectivityMonitor: DebugBundleConnectivityMonitoring {
       var currentStatus: DebugBundleConnectivityStatus { .connected }
       func setUpdateHandler(_ handler: (@Sendable (DebugBundleConnectivityStatus) -> Void)?) {}
+  }
+
+  // The installed-pod smoke verifies real ingestion; configuration fetching has
+  // its own tests and must not compete with the local transport request.
+  private struct SmokeRemoteConfigClient: DebugBundleRemoteConfigClienting {
+      func fetch(request: DebugBundleRemoteConfigRequest) async -> DebugBundleRemoteConfigResult {
+          .failed
+      }
   }
 
   private struct CocoaPodsSmokeFailure: Error {

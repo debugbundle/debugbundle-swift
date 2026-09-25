@@ -27,7 +27,7 @@ smoke-cocoapods-published:
 	sh ./scripts/smoke-cocoapods.sh --published "$(VERSION)"
 
 .PHONY: test-ios-simulator
-# Shared macOS runners can starve utility-queue work when XCTest clones simulators.
+# Avoid simulator cloning while the delivery and deadline tests exercise one process.
 test-ios-simulator:
 	DESTINATION="$${IOS_SIMULATOR_DESTINATION:-$$(sh ./scripts/resolve-ios-simulator-destination.sh)}"; \
 	echo "Using iOS simulator destination: $$DESTINATION"; \

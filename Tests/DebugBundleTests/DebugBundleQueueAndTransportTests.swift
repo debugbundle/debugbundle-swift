@@ -11,7 +11,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         let queueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("queue.json")
         let transport = RecordingTransport()
 
-        let firstClient = DebugBundleClient(
+        let firstClient = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -28,7 +28,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         XCTAssertEqual(persistedEvents.count, 1)
         XCTAssertEqual(persistedEvents.first?.payload["message"], .string("persist me"))
 
-        let secondClient = DebugBundleClient(
+        let secondClient = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -47,7 +47,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
     func testConnectivityMonitorDefersFlushUntilReachable() async throws {
         let transport = RecordingTransport()
         let monitor = TestConnectivityMonitor(status: .disconnected)
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -78,7 +78,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         ])
         var currentTime = Date(timeIntervalSince1970: 1_000)
 
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -112,7 +112,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         ])
         var currentTime = Date(timeIntervalSince1970: 2_000)
 
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -144,7 +144,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
             .appendingPathComponent("queue.json")
         let transport = SequencedTransport(results: [.success(DebugBundleTransportResult(statusCode: 400))])
         let monitor = TestConnectivityMonitor(status: .connected)
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", offlineQueueURL: queueURL),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -173,7 +173,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
     func testBatchSizeTriggersFlushWithoutExplicitCall() async {
         let transport = SequencedTransport(results: [.success(DebugBundleTransportResult(statusCode: 202))])
         let sleeper = TestSleeper()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 1, flushInterval: 60),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -192,7 +192,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
     func testFlushCapsTransportBatchSizeAndDrainsRemainingEventsOnNextFlush() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 2, flushInterval: 60),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -228,7 +228,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
     func testFlushIntervalTriggersPeriodicFlushWithoutExplicitCall() async {
         let transport = SequencedTransport(results: [.success(DebugBundleTransportResult(statusCode: 202))])
         let sleeper = TestSleeper()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 10, flushInterval: 60),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -252,7 +252,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
     func testAppBackgroundTriggersFlushWithoutExplicitCall() async {
         let transport = SequencedTransport(results: [.success(DebugBundleTransportResult(statusCode: 202))])
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 10, flushInterval: 60),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(result: .notModified(eTag: nil)),
@@ -593,7 +593,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
     func testInstrumentedURLSessionInjectsTraceHeaderAndRecordsRequestEvent() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(
@@ -720,7 +720,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
     func testAlamofireSessionInjectsTraceHeaderAndCapturesFailureEvent() async throws {
         let transport = RecordingTransport()
         let requestRecorded = expectation(description: "alamofire request recorded")
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             remoteConfigClient: StaticRemoteConfigClient(

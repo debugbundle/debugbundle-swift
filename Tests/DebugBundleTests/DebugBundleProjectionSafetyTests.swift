@@ -52,7 +52,7 @@ final class DebugBundleProjectionSafetyTests: XCTestCase {
 
         let store = HeldProjectionStore()
         let fallbackTransport = RecordingTransport()
-        let queuedClient = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100),
+        let queuedClient = makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100),
             transport: fallbackTransport, queueStore: store, remoteConfigClient: ProjectionConfig(),
             connectivityMonitor: ProjectionConnectivity(), random: { 0 })
         await fulfillment(of: [store.entered], timeout: 2)
@@ -99,7 +99,7 @@ final class DebugBundleProjectionSafetyTests: XCTestCase {
 
     private func makeClient(transport: DebugBundleTransporting,
         provider: (() -> DebugBundleDeviceContext)? = nil) -> DebugBundleClient {
-        DebugBundleClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100, flushInterval: 3600),
+        makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100, flushInterval: 3600),
             transport: transport, queueStore: ProjectionStore(), remoteConfigClient: ProjectionConfig(),
             connectivityMonitor: ProjectionConnectivity(), random: { 0 }, deviceContextProvider: provider)
     }

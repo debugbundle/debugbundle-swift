@@ -28,7 +28,7 @@ final class DebugBundleDeliveryQueue {
         }
     }
     private let lock = NSLock()
-    private let worker = DispatchQueue(label: "com.debugbundle.delivery", qos: .utility)
+    private let worker = DispatchQueue(label: "com.debugbundle.delivery", qos: .default)
     private let config: DebugBundleConfig
     private let store: DebugBundleQueueStoring
     private let clock: () -> Date
@@ -307,7 +307,7 @@ final class DebugBundleCompletion {
                 return nil
             }
             if let immediate { continuation.resume(returning: immediate) }
-            else { DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + min(timeout, 60), execute: timer) }
+            else { DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + min(timeout, 60), execute: timer) }
         }
     }
 

@@ -111,7 +111,7 @@ final class DebugBundleCaptureSafetyTests: XCTestCase {
         store.holdLoad = true
         let transport = RecordingTransport()
         let hooks = SafetyCounter()
-        let client = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
+        let client = makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
             requestTimeout: 0.1, offlineQueueMaxEvents: 100, offlineQueueMaxBytes: 4_096,
             beforeSend: { _ = hooks.increment(); return $0 }), transport: transport, queueStore: store,
             remoteConfigClient: SafetyConfigClient(), connectivityMonitor: SafetyConnectivity(), random: { 0 })
@@ -131,7 +131,7 @@ final class DebugBundleCaptureSafetyTests: XCTestCase {
 
     func testFinalHookPolicyAndExceptionSessionExemptionArePreserved() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
+        let client = makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
             maxEventsPerSession: 1, logLevel: .error, beforeSend: { original in
                 var event = original
                 if event.payload["message"] == .string("downgrade") { event.payload["level"] = .string("warning") }
@@ -159,7 +159,7 @@ final class DebugBundleCaptureSafetyTests: XCTestCase {
 
     private func makeClient(store: DebugBundleQueueStoring, maxEvents: Int = 10,
         transport: DebugBundleTransporting = RecordingTransport(), hook: DebugBundleBeforeSend? = nil) -> DebugBundleClient {
-        DebugBundleClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
+        makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", batchSize: 100,
             flushInterval: 3600, requestTimeout: 0.1, offlineQueueMaxEvents: maxEvents, beforeSend: hook),
             transport: transport, queueStore: store,
             remoteConfigClient: SafetyConfigClient(), connectivityMonitor: SafetyConnectivity(), random: { 0 })

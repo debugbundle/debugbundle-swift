@@ -134,7 +134,7 @@ final class DebugBundleWireContractTests: XCTestCase {
     }
 
     private func makeClient(transport: RecordingTransport) -> DebugBundleClient {
-        DebugBundleClient(
+        makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",

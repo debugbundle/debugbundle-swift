@@ -57,7 +57,7 @@ final class DebugBundleCrashReporterTests: XCTestCase {
             .appendingPathComponent("fatal-crash.json")
         let store = DebugBundleCrashEvidenceStore(fileURL: tempFile)
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -97,7 +97,7 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         }
 
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }
@@ -134,7 +134,7 @@ final class DebugBundleCrashReporterTests: XCTestCase {
 
     func testCaptureNSExceptionReportsAndThrowsBridgedError() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
             transport: transport,
             random: { 0 }

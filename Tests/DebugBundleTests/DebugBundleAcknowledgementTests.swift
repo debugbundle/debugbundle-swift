@@ -120,7 +120,7 @@ final class DebugBundleAcknowledgementTests: XCTestCase {
             let entered = expectation(description: "sender owns original batch")
             let queue = AcknowledgementQueueStore()
             let transport = HeldAcknowledgementTransport(result: result, entered: entered)
-            let client = DebugBundleClient(
+            let client = makeIsolatedClient(
                 config: DebugBundleConfig(projectToken: "token", batchSize: 100, flushInterval: 3600,
                     offlineQueueMaxEvents: 3),
                 transport: transport, queueStore: queue,
@@ -145,7 +145,7 @@ final class DebugBundleAcknowledgementTests: XCTestCase {
         transport: DebugBundleTransporting,
         queue: DebugBundleQueueStoring
     ) -> DebugBundleClient {
-        DebugBundleClient(
+        makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", batchSize: 10, flushInterval: 60),
             transport: transport,
             queueStore: queue,

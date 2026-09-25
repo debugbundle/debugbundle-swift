@@ -6,7 +6,7 @@ import DebugBundleTestSupport
 final class DebugBundleBeforeSendTests: XCTestCase {
     func testFilteredInfoBurstDoesNotInvokeHook() {
         let hooks = LockedCounter()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "ios", logLevel: .warning,
                 beforeSend: { event in
                     hooks.increment()
@@ -23,7 +23,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
     func testContextIsCopiedBeforeRetentionAndServiceMetadataIsProtected() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
+        let client = makeIsolatedClient(config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
             beforeSend: { event in
                 var changed = event
                 changed.serviceRuntime = "dbundle_proj_RUNTIME_SECRET"
@@ -45,7 +45,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
     func testHookCannotReintroduceCredentialsThroughProtocolMetadata() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
                 beforeSend: { event in
                     var changed = event
@@ -182,7 +182,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
     func testBeforeSendRunsAfterRedactionOnlyForEligibleLogs() async {
         let observation = LockedObservation()
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -206,7 +206,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
         let filteredObservation = LockedObservation()
         let filteredTransport = RecordingTransport()
-        let filteredClient = DebugBundleClient(
+        let filteredClient = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -230,7 +230,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
     func testBeforeSendMutatesDropsAndRejectsInvalidResults() async throws {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -272,7 +272,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
     func testBeforeSendCannotReintroduceCredentialText() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
@@ -307,7 +307,7 @@ final class DebugBundleBeforeSendTests: XCTestCase {
 
     func testBeforeSendAppliesToSuppressionAggregates() async {
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",

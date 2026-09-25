@@ -27,7 +27,7 @@ final class DebugBundleHistoricalQueuePrivacyTests: XCTestCase {
         )])
         XCTAssertTrue(try String(contentsOf: queueURL, encoding: .utf8).contains("old-queue-secret"))
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", offlineQueueURL: queueURL),
             transport: transport,
             connectivityMonitor: nil,
@@ -47,7 +47,7 @@ final class DebugBundleHistoricalQueuePrivacyTests: XCTestCase {
         try FileManager.default.createDirectory(at: queueURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("token=old-queue-secret".utf8).write(to: queueURL)
         let transport = RecordingTransport()
-        let client = DebugBundleClient(
+        let client = makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-ios", offlineQueueURL: queueURL),
             transport: transport,
             connectivityMonitor: nil,

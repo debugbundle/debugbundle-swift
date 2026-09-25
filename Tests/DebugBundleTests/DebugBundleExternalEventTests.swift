@@ -185,7 +185,7 @@ final class DebugBundleExternalEventTests: XCTestCase {
         ),
         directives: [DebugBundleRemoteProbeDirective] = []
     ) -> DebugBundleClient {
-        DebugBundleClient(
+        makeIsolatedClient(
             config: DebugBundleConfig(projectToken: "token", service: "checkout-rn", batchSize: 20, flushInterval: 60),
             transport: transport,
             remoteConfigClient: ExternalEventRemoteConfigClient(
