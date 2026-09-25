@@ -33,6 +33,7 @@ final class DebugBundleHistoricalQueuePrivacyTests: XCTestCase {
             connectivityMonitor: nil,
             random: { 0 }
         )
+        await client.waitForPendingCapture()
         let rewritten = try String(contentsOf: queueURL, encoding: .utf8)
         XCTAssertFalse(rewritten.contains("old-queue-secret"))
         XCTAssertFalse(rewritten.contains("old-key"))
@@ -52,6 +53,7 @@ final class DebugBundleHistoricalQueuePrivacyTests: XCTestCase {
             connectivityMonitor: nil,
             random: { 0 }
         )
+        await client.waitForPendingCapture()
         XCTAssertEqual(try String(contentsOf: queueURL, encoding: .utf8), "[]")
         await client.flush()
         let batches = await transport.recordedBatches()

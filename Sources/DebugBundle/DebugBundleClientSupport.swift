@@ -51,7 +51,10 @@ func debugBundleStringValue(from value: Any??) -> String? {
     guard let unwrapped = value ?? nil else {
         return nil
     }
-    return String(describing: unwrapped)
+    guard debugBundleIsSafeFoundationValue(unwrapped) else { return nil }
+    if let value = unwrapped as? String { return value.utf8.prefix(4_097).count <= 4_096 ? value : nil }
+    if type(of: unwrapped) == Int.self { return String(unwrapped as! Int) }
+    return nil
 }
 
 func debugBundleDefaultQueueURL(for config: DebugBundleConfig) -> URL {

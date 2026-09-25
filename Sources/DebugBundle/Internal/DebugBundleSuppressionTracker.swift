@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct DebugBundleSuppressionDecision {
     enum Action {
@@ -26,6 +27,12 @@ final class DebugBundleSuppressionTracker {
     private let checkpointInterval: TimeInterval = 30
 
     func register(fingerprint: String, now: Date) -> DebugBundleSuppressionDecision {
+        // Fixed-size keys and bounded timestamp history keep unique sustained bursts finite.
+        let fingerprint = SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
+        if entries[fingerprint] == nil, entries.count >= 2_048,
+           let oldest = entries.min(by: { ($0.value.lastSeen ?? .distantPast) < ($1.value.lastSeen ?? .distantPast) })?.key {
+            entries.removeValue(forKey: oldest)
+        }
         var entry = entries[fingerprint] ?? Entry()
 
         if let lastSeen = entry.lastSeen, now.timeIntervalSince(lastSeen) >= silenceResetWindow {
@@ -35,6 +42,7 @@ final class DebugBundleSuppressionTracker {
         entry.lastSeen = now
         entry.timestamps = entry.timestamps.filter { now.timeIntervalSince($0) <= duplicateWindow }
         entry.timestamps.append(now)
+        if entry.timestamps.count > loopThreshold + 1 { entry.timestamps.removeFirst(entry.timestamps.count - loopThreshold - 1) }
         let loopCount = entry.timestamps.filter { now.timeIntervalSince($0) <= loopWindow }.count
 
         if loopCount > loopThreshold {
@@ -48,7 +56,7 @@ final class DebugBundleSuppressionTracker {
             } else {
                 shouldEmitCheckpoint = true
             }
-            entry.suppressedCount += 1
+            entry.suppressedCount = min(entry.suppressedCount, Int.max - 1) + 1
             if shouldEmitCheckpoint {
                 entry.lastCheckpointAt = now
                 entries[fingerprint] = entry
@@ -59,7 +67,7 @@ final class DebugBundleSuppressionTracker {
         }
 
         if entry.timestamps.count > 3 {
-            entry.suppressedCount += 1
+            entry.suppressedCount = min(entry.suppressedCount, Int.max - 1) + 1
             entries[fingerprint] = entry
             return DebugBundleSuppressionDecision(action: .suppress(suppressedCount: entry.suppressedCount, windowSeconds: Int(duplicateWindow)))
         }

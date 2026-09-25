@@ -109,6 +109,38 @@ final class DebugBundleAcknowledgementTests: XCTestCase {
         XCTAssertEqual(queue.events.count, 0)
     }
 
+    func testAcknowledgementAfterOverflowRetainsUnsentEventsAndOriginalRetryIndices() async {
+        let outcomes: [(DebugBundleTransportResult, [String])] = [
+            (.init(statusCode: 202), ["C"]),
+            (.init(statusCode: 400), ["C"]),
+            (.init(statusCode: 202, acknowledgement: .init(accepted: 1, rejected: 1,
+                errors: [.init(index: 1, reason: "analytics_quota_exceeded")])), ["B", "C"])
+        ]
+        for (result, expected) in outcomes {
+            let entered = expectation(description: "sender owns original batch")
+            let queue = AcknowledgementQueueStore()
+            let transport = HeldAcknowledgementTransport(result: result, entered: entered)
+            let client = DebugBundleClient(
+                config: DebugBundleConfig(projectToken: "token", batchSize: 100, flushInterval: 3600,
+                    offlineQueueMaxEvents: 3),
+                transport: transport, queueStore: queue,
+                remoteConfigClient: AcknowledgementRemoteConfigClient(),
+                connectivityMonitor: AcknowledgementConnectivityMonitor(), random: { 0 }
+            )
+            client.captureLog("A", level: .error)
+            client.captureLog("B", level: .error)
+            let flush = Task { await client.flush() }
+            await fulfillment(of: [entered], timeout: 2)
+            client.captureLog("C", level: .error)
+            client.captureLog("D", level: .error)
+            await client.waitForPendingCapture()
+            XCTAssertEqual(queue.events.map { $0.payload["message"] }, [.string("A"), .string("B"), .string("C")])
+            await transport.release()
+            await flush.value
+            XCTAssertEqual(queue.events.compactMap { $0.payload["message"] }, expected.map(JSONValue.string))
+        }
+    }
+
     private func makeClient(
         transport: DebugBundleTransporting,
         queue: DebugBundleQueueStoring
@@ -162,4 +194,28 @@ private struct AcknowledgementRemoteConfigClient: DebugBundleRemoteConfigClienti
 private final class AcknowledgementConnectivityMonitor: DebugBundleConnectivityMonitoring {
     var currentStatus: DebugBundleConnectivityStatus { .connected }
     func setUpdateHandler(_ handler: (@Sendable (DebugBundleConnectivityStatus) -> Void)?) {}
+}
+
+private actor HeldAcknowledgementTransport: DebugBundleTransporting {
+    let result: DebugBundleTransportResult
+    let entered: XCTestExpectation
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(result: DebugBundleTransportResult, entered: XCTestExpectation) {
+        self.result = result
+        self.entered = entered
+    }
+
+    func send(events: [DebugBundleEventEnvelope], config: DebugBundleConfig) async throws -> DebugBundleTransportResult {
+        await withCheckedContinuation {
+            continuation = $0
+            entered.fulfill()
+        }
+        return result
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 }

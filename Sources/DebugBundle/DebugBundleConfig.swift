@@ -7,6 +7,9 @@ public enum DebugBundleFileProtection: String, Sendable {
     case none
 }
 
+/// Runs serially on the delivery worker after a privacy-safe event is admitted.
+/// Return a valid replacement or nil to drop; invalid replacements fall back to the original.
+/// Final policy and mandatory privacy checks still apply. Never rely on caller-thread execution.
 public typealias DebugBundleBeforeSend = @Sendable (
     DebugBundleEventEnvelope
 ) -> DebugBundleEventEnvelope?
@@ -115,7 +118,7 @@ public struct DebugBundleConfig: Sendable {
         probeFlushOnError: Bool = true,
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
-        sdkVersion: String = "2.0.0",
+        sdkVersion: String = "3.0.0",
         beforeSend: DebugBundleBeforeSend? = nil
     ) {
         self.projectToken = projectToken

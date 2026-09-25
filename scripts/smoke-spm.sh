@@ -35,6 +35,10 @@ until curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null; do
   sleep 1
 done
 
+# Path dependencies can keep a stale source-file list when new SDK files are added.
+# This is a clean-consumer gate, so discard only this consumer's generated build cache.
+swift package --package-path "$REPO_DIR/smoke/spm-consumer" clean
+
 DEBUGBUNDLE_SMOKE_ENDPOINT="http://127.0.0.1:$PORT/v1/events" \
   swift run --package-path "$REPO_DIR/smoke/spm-consumer" DebugBundleSpmSmoke
 

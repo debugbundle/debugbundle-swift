@@ -1,5 +1,7 @@
 import Foundation
 
+/// A client calls load and persist serially on its delivery worker, outside capture locks.
+/// A stalled implementation retains bounded queue ownership; capture and flush deadlines remain independent.
 public protocol DebugBundleQueueStoring {
     func load(now: Date, ttl: TimeInterval) -> [DebugBundleEventEnvelope]
     func persist(_ events: [DebugBundleEventEnvelope])

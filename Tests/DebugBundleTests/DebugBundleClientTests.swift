@@ -88,7 +88,7 @@ final class DebugBundleClientTests: XCTestCase {
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
         XCTAssertEqual(event.context?["operation"], .string("payment_refresh"))
-        XCTAssertEqual(event.payload["message"], .string("async failed"))
+        XCTAssertEqual(event.payload["message"], .string("Error details unavailable (custom value type)"))
     }
 
     func testCaptureTaskReportsErrorAndReturnsNil() async throws {
@@ -114,7 +114,7 @@ final class DebugBundleClientTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
-        XCTAssertEqual(event.payload["message"], .string("task failed"))
+        XCTAssertEqual(event.payload["message"], .string("Error details unavailable (custom value type)"))
     }
 
     func testRequestCaptureFiltersHeadersAndPromotesServerErrors() async throws {
@@ -586,7 +586,7 @@ final class DebugBundleClientTests: XCTestCase {
         XCTAssertEqual(captured.first?.2["array"] as? [String], ["one", "two"])
         XCTAssertEqual((captured.first?.2["dictionary"] as? [String: Any])?["nested"] as? String, "yes")
         XCTAssertEqual(captured.first?.2["file"] as? String, "Test.swift")
-        XCTAssertEqual(captured.last?.2["error"] as? String, "sample-log-error")
+        XCTAssertTrue(captured.last?.2["error"] is SampleLogError)
     }
 
     func testOpportunisticRemoteConfigRefreshUsesBoundedIntervalForFlushAndForeground() async {

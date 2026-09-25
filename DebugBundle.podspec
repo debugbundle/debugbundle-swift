@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "DebugBundle"
-  s.version      = "2.0.0"
+  s.version      = "3.0.0"
   s.summary      = "Native DebugBundle SDK for iOS apps."
   s.description  = "Core DebugBundle client, queueing, transport, redaction, capture policy, and probes for iOS apps."
   s.license      = { :type => "Apache-2.0", :file => "LICENSE" }

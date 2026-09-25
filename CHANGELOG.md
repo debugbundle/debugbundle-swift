@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-25
+
+### Changed
+
+- **Major timing change:** capture admits privacy-safe bounded events and returns before `beforeSend` or disk access. A coalesced serial worker handles hooks, final policy/privacy, offline recovery and persistence. See [MIGRATION-3.0.md](MIGRATION-3.0.md).
+- Count pending work, persistence snapshots and in-flight sends against one priority-aware event/byte limit. Full queues drop lower-priority/new events and emit bounded pressure summaries; active snapshots cannot be evicted.
+- Bound flush/config waits without replacing a stuck sender, and cap suppression fingerprints and per-fingerprint timestamp history.
+- Move device metadata/custom reference-error projection onto the same worker; never invoke arbitrary caller descriptions, reflection, custom value-error accessors or SwiftLog formatters. Preserve standard NSError, crash replay and Objective-C exception messages through primitive snapshots; unsupported custom details have explicit fallback text.
+
+- Reconcile delivery acknowledgements using sent event identities so queue overflow during a send cannot delete newer unsent events or shift retryable acknowledgement indices.
+
+- Reject logs below the effective local and remote level before context construction, privacy scanning, or invoking `beforeSend`. The hook is no longer called for logs rejected by policy.
+- Gate CocoaPods publication on the iOS simulator test suite and iOS 15 deployment-target compilation, matching the existing CI lanes.
+
 ## [2.0.0] - 2026-09-21
 
 ### Security

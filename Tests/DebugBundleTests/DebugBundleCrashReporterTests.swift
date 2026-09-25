@@ -83,6 +83,7 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
+        XCTAssertEqual(event.payload["message"], .string("fatal boom"))
         XCTAssertEqual(event.context?["fatal_crash"], .bool(true))
         XCTAssertEqual(event.context?["crash_replayed"], .bool(true))
         XCTAssertEqual(event.context?["mechanism"], .string("next_launch_replay"))
@@ -123,7 +124,7 @@ final class DebugBundleCrashReporterTests: XCTestCase {
         let event = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(event.eventType, DebugBundleEventType.frontendException)
         XCTAssertEqual(event.context?["operation"], .string("payment_refresh"))
-        XCTAssertEqual(event.payload["message"], .string("async failed"))
+        XCTAssertEqual(event.payload["message"], .string("Error details unavailable (custom value type)"))
     }
 
     func testCaptureAsyncReturnsSuccessfulValue() async throws {

@@ -78,13 +78,14 @@ public struct DebugBundleLogHandler: LogHandler {
         }
         defer { Self.exitRecursionGuard() }
 
-        var mergedMetadata = metadata
-        if let explicitMetadata {
+        var mergedMetadata = metadata.count <= 50 ? metadata : [:]
+        if let explicitMetadata, explicitMetadata.count <= 50 {
             mergedMetadata.merge(explicitMetadata) { _, new in new }
         }
-
+        if mergedMetadata.count > 50 { mergedMetadata = [:] }
+        var remaining = 4_096
         var context = mergedMetadata.reduce(into: [String: Any?]()) { result, entry in
-            result[entry.key] = Self.stringify(entry.value)
+            result[entry.key] = Self.stringify(entry.value, depth: 0, remaining: &remaining)
         }
         context["logger_label"] = label
         context["source"] = source
@@ -92,7 +93,8 @@ public struct DebugBundleLogHandler: LogHandler {
         context["function"] = function
         context["line"] = Int(line)
         if let error {
-            context["error"] = String(describing: error)
+            // The core projects this error without evaluating custom descriptions.
+            context["error"] = error
         }
 
         emit(Self.map(level), message.description, context)
@@ -111,17 +113,27 @@ public struct DebugBundleLogHandler: LogHandler {
         }
     }
 
-    private static func stringify(_ metadata: Logger.Metadata.Value) -> Any {
+    private static func stringify(_ metadata: Logger.Metadata.Value, depth: Int, remaining: inout Int) -> Any {
+        guard depth < 6, remaining > 0 else { return "[TRUNCATED]" }
+        remaining -= 1
         switch metadata {
         case let .string(value):
             return value
         case let .stringConvertible(value):
-            return value.description
+            // Only concrete standard values can format synchronously. Custom formatters
+            // may block, throw Objective-C exceptions, or retain arbitrary application state.
+            let name = String(reflecting: type(of: value))
+            let safe = ["Swift.String", "Swift.Int", "Swift.UInt", "Swift.Int64", "Swift.UInt64",
+                        "Swift.Double", "Swift.Float", "Swift.Bool", "Foundation.URL", "FoundationEssentials.URL",
+                        "Foundation.Date", "FoundationEssentials.Date"]
+            return safe.contains(name) ? value.description : "[Unsupported value]"
         case let .array(value):
-            return value.map(stringify)
+            guard value.count <= 50 else { return "[REDACTED]" }
+            return value.map { stringify($0, depth: depth + 1, remaining: &remaining) }
         case let .dictionary(value):
+            guard value.count <= 50 else { return "[REDACTED]" }
             return value.reduce(into: [String: Any]()) { result, entry in
-                result[entry.key] = stringify(entry.value)
+                result[entry.key] = stringify(entry.value, depth: depth + 1, remaining: &remaining)
             }
         }
     }

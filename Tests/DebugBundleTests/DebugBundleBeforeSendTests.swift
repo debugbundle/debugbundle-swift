@@ -4,6 +4,23 @@ import XCTest
 import DebugBundleTestSupport
 
 final class DebugBundleBeforeSendTests: XCTestCase {
+    func testFilteredInfoBurstDoesNotInvokeHook() {
+        let hooks = LockedCounter()
+        let client = DebugBundleClient(
+            config: DebugBundleConfig(projectToken: "token", service: "ios", logLevel: .warning,
+                beforeSend: { event in
+                    hooks.increment()
+                    return event
+                }),
+            transport: RecordingTransport(), connectivityMonitor: nil, random: { 0 }
+        )
+
+        for index in 0 ..< 10_000 {
+            client.captureLog("filtered info \(index)", level: .info)
+        }
+        XCTAssertEqual(hooks.value, 0)
+    }
+
     func testContextIsCopiedBeforeRetentionAndServiceMetadataIsProtected() async {
         let transport = RecordingTransport()
         let client = DebugBundleClient(config: DebugBundleConfig(projectToken: "token", service: "ios", batchSize: 10, flushInterval: 60,
@@ -162,14 +179,13 @@ final class DebugBundleBeforeSendTests: XCTestCase {
         XCTAssertNil(applyDebugBundleBeforeSend(base, hook: { _ in nil }))
     }
 
-    func testBeforeSendRunsAfterRedactionAndBeforeCapturePolicy() async {
+    func testBeforeSendRunsAfterRedactionOnlyForEligibleLogs() async {
         let observation = LockedObservation()
         let transport = RecordingTransport()
         let client = DebugBundleClient(
             config: DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
-                captureLogs: false,
                 beforeSend: { event in
                     observation.value = event.payload["attributes"]?
                         .objectValue?["password"]
@@ -181,12 +197,35 @@ final class DebugBundleBeforeSendTests: XCTestCase {
             random: { 0 }
         )
 
-        client.captureLog("disabled", level: .error, context: ["password": "secret"])
+        client.captureLog("eligible", level: .error, context: ["password": "secret"])
         await client.flush()
 
         XCTAssertEqual(observation.value, .string("[REDACTED]"))
         let batches = await transport.recordedBatches()
-        XCTAssertTrue(batches.flatMap { $0 }.isEmpty)
+        XCTAssertEqual(batches.flatMap { $0 }.count, 1)
+
+        let filteredObservation = LockedObservation()
+        let filteredTransport = RecordingTransport()
+        let filteredClient = DebugBundleClient(
+            config: DebugBundleConfig(
+                projectToken: "token",
+                service: "checkout-ios",
+                captureLogs: false,
+                beforeSend: { event in
+                    filteredObservation.value = event.payload["attributes"]?
+                        .objectValue?["password"]
+                    return event
+                }
+            ),
+            transport: filteredTransport,
+            connectivityMonitor: nil,
+            random: { 0 }
+        )
+        filteredClient.captureLog("disabled", level: .error, context: ["password": "secret"])
+        await filteredClient.flush()
+        XCTAssertNil(filteredObservation.value)
+        let filteredBatches = await filteredTransport.recordedBatches()
+        XCTAssertTrue(filteredBatches.flatMap { $0 }.isEmpty)
     }
 
     func testBeforeSendMutatesDropsAndRejectsInvalidResults() async throws {
@@ -317,5 +356,22 @@ private final class LockedObservation: @unchecked Sendable {
             storedValue = newValue
             lock.unlock()
         }
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
     }
 }

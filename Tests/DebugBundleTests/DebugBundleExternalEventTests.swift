@@ -45,6 +45,7 @@ final class DebugBundleExternalEventTests: XCTestCase {
             ]
         )
         event["occurred_at"] = "2026-05-28T10:15:30.123Z"
+        event.removeValue(forKey: "device")
 
         XCTAssertTrue(client.captureExternalEvent(event))
         await client.flush()
@@ -52,6 +53,7 @@ final class DebugBundleExternalEventTests: XCTestCase {
         let batches = await transport.recordedBatches()
         let captured = try XCTUnwrap(batches.first?.first)
         XCTAssertEqual(captured.occurredAt, "2026-05-28T10:15:30.123Z")
+        XCTAssertEqual(captured.device.model, "native-fallback")
     }
 
     func testExternalValidationIsClosedAndNativeRequestPolicyRemainsAuthoritative() async {
@@ -196,7 +198,8 @@ final class DebugBundleExternalEventTests: XCTestCase {
             ),
             connectivityMonitor: nil,
             clock: { Date(timeIntervalSince1970: 1_800_000_000) },
-            random: { 0 }
+            random: { 0 },
+            deviceContextProvider: { DebugBundleDeviceContext(model: "native-fallback") }
         )
     }
 

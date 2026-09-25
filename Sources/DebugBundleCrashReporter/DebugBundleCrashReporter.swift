@@ -88,7 +88,7 @@ public enum DebugBundleCrashReporter {
         }
 
         report(
-            DebugBundleReplayedCrashError(evidence: evidence),
+            NSError(domain: evidence.errorType, code: 0, userInfo: [NSLocalizedDescriptionKey: evidence.message]),
             [
                 "fatal_crash": true,
                 "crash_replayed": true,
@@ -180,8 +180,10 @@ public enum DebugBundleCrashReporter {
                 reason: exceptionReason as String? ?? "Objective-C exception raised",
                 stackTrace: (stackTrace as? [String]) ?? []
             )
+            // Reporting uses a primitive NSError snapshot; the public bridge still throws
+            // the original typed error below. This preserves details under v3 safe projection.
             report(
-                error,
+                NSError(domain: error.name, code: 0, userInfo: [NSLocalizedDescriptionKey: error.reason]),
                 context.merging(
                     [
                         "ns_exception_name": error.name,
@@ -223,13 +225,5 @@ public struct DebugBundleObjCExceptionError: LocalizedError, Sendable, Equatable
 
     public var errorDescription: String? {
         reason
-    }
-}
-
-private struct DebugBundleReplayedCrashError: LocalizedError {
-    let evidence: DebugBundleCrashEvidence
-
-    var errorDescription: String? {
-        evidence.message
     }
 }

@@ -1,10 +1,12 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v2.0.0-orange)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.0.0-orange)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 Native DebugBundle SDK for iOS and iPadOS apps, with SwiftUI and UIKit lifecycle capture, URLSession trace injection, offline queueing, SwiftLog support, crash replay helpers, and probes.
+
+Version **3.0.0** changes hook and persistence timing. Review [the v3 migration](MIGRATION-3.0.md) before upgrading from 2.x.
 
 Swift is a mobile client SDK, not a browser relay host. It sends mobile events to the configured ingestion endpoint and uses explicit first-party URLSession or Alamofire instrumentation for trace correlation; browser relay settings such as `transportMode`, `allowedOrigins`, and CORS preflight handling belong to the Browser SDK plus a backend/server SDK relay.
 
@@ -19,7 +21,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 .dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "2.0.0")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.0.0")
 ],
 .targets: [
 	.target(
@@ -35,7 +37,7 @@ Add the package to your app target:
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `2.0.0` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.0.0` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -165,7 +167,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `service` | `ios-app` | Service name shown on incidents and bundles. |
 | `endpoint` | `https://api.debugbundle.com/v1/events` | Ingestion endpoint for cloud or self-hosted delivery. |
 | `batchSize` | `10` | Events per flush batch. |
-| `flushInterval` | `3` seconds | Maximum delay before a background flush. |
+| `flushInterval` | `3` seconds | Background flush interval; delivery also depends on worker and transport availability. |
 | `sampleRate` | `1.0` | Per-event sample rate. |
 | `sessionSampleRate` | `1.0` | Session-level sampling decision for the whole app session. |
 | `requestTimeout` | `5` seconds | HTTP timeout for delivery and remote config fetches. |
@@ -180,8 +182,8 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `captureLogs` | `true` | Enable log-event capture. |
 | `logLevel` | `.warning` | Minimum captured log severity. |
 | `tracePropagationTargets` | `[]` | Allowed first-party targets for `X-DebugBundle-Trace-Id` injection. |
-| `offlineQueueMaxEvents` | `500` | Maximum queued events persisted on device. |
-| `offlineQueueMaxBytes` | `5 MB` | Maximum queue size on disk. |
+| `offlineQueueMaxEvents` | `500` | Shared cap across pending hooks, ready events, persistence snapshots and in-flight sends. |
+| `offlineQueueMaxBytes` | `5 MB` | Shared serialized-byte cap across all retained queue states; each event is also capped at 256 KiB. |
 | `offlineQueueTtl` | `72` hours | Drop queued events older than this on delivery attempt. |
 | `fileProtection` | `.completeUntilFirstUserAuthentication` | Queue file protection class for app-private storage. |
 | `offlineQueueURL` | SDK-managed Application Support path | Override queue storage location for tests or advanced setups. |
@@ -190,7 +192,11 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `2.0.0` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.0.0` | SDK version stamped into outgoing event metadata. |
+
+Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
+
+`await flush()` waits at most `requestTimeout` (capped at 60 seconds), including preparation and persistence. It does not acknowledge events on timeout or free a stuck sender's ownership. Remote config runs separately. A stalled hook, store or transport causes bounded best-effort loss instead of additional workers or unbounded tasks. Use short, thread-safe hooks, and see [v3 migration](MIGRATION-3.0.md) for shutdown and custom-store implications.
 
 ## Install Examples By Mode
 
@@ -254,7 +260,7 @@ CheckoutView()
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current package release | `v2.0.0` |
+| Current package release | `v3.0.0` |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -273,7 +279,7 @@ Publish from an authenticated CocoaPods trunk session:
 make pod-publish
 ```
 
-GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v2.0.0` for podspec version `2.0.0`.
+GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v3.0.0` for podspec version `3.0.0`.
 
 ## Dependency Alignment
 
@@ -306,7 +312,7 @@ If you use Alamofire or SwiftLog integration, stay within the package-declared d
 - Missing or blank connected credentials leave the SDK in a degraded or disconnected no-op state instead of pretending delivery is healthy.
 - Request and response bodies are disabled by default.
 - Header capture is allowlist-based.
-- Source candidate `telemetry-privacy-v1` protects credential fields/text before capture hooks and again before queue persistence or transport. Older file queue records are bounded, projected, and atomically rewritten at startup; corrupt/oversized records are withheld. The policy cannot infer every arbitrary confidential value, so keep capture allowlists and customer field configuration narrow.
+- `telemetry-privacy-v1` protects credential fields/text before capture hooks and again before queue persistence or transport. Older file queue records are bounded, projected, and atomically rewritten by the background startup worker before replay; corrupt/oversized records are withheld. The policy cannot infer every arbitrary confidential value, so keep capture allowlists and customer field configuration narrow.
 - Screenshots, text fields, clipboard, contacts, keychain values, photos, precise location, IDFV, and advertising IDs are not captured by default.
 - Duplicate storms are suppressed locally before transport.
 
@@ -363,6 +369,7 @@ make build
 ```
 
 `make test-ios-simulator` auto-resolves a usable iPhone simulator from the locally installed runtimes.
+The CocoaPods publication workflow runs this simulator gate and compiles the iOS 15 deployment target before pushing a podspec.
 
 Override the simulator destination when needed:
 

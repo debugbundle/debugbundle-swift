@@ -3,6 +3,11 @@ SHELL := /bin/sh
 .PHONY: test
 test: coverage
 
+.PHONY: test-filtered
+test-filtered:
+	test -n "$(FILTER)"
+	swift test --filter "$(FILTER)"
+
 .PHONY: coverage
 coverage:
 	swift test --enable-code-coverage
@@ -26,6 +31,10 @@ test-ios-simulator:
 	DESTINATION="$${IOS_SIMULATOR_DESTINATION:-$$(sh ./scripts/resolve-ios-simulator-destination.sh)}"; \
 	echo "Using iOS simulator destination: $$DESTINATION"; \
 	xcodebuild test -scheme debugbundle-swift-Package -destination "$$DESTINATION"
+
+.PHONY: build-ios-15
+build-ios-15:
+	xcodebuild build -quiet -scheme debugbundle-swift-Package -destination 'generic/platform=iOS Simulator' IPHONEOS_DEPLOYMENT_TARGET=15.0
 
 .PHONY: build
 build:

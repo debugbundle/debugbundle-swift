@@ -22,6 +22,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         )
 
         firstClient.captureMessage("persist me", level: .error)
+        await firstClient.waitForPendingCapture()
 
         let persistedEvents = try DebugBundleQueueInspector.loadEvents(from: queueURL)
         XCTAssertEqual(persistedEvents.count, 1)
@@ -153,6 +154,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         client.captureMessage("drop-on-400", level: .error)
 
+        await client.waitForPendingCapture()
         let persistedBeforeFlush = try? DebugBundleQueueInspector.loadEvents(from: queueURL)
         XCTAssertEqual(persistedBeforeFlush?.count, 1)
 
@@ -201,8 +203,8 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         client.captureMessage("second", level: .error)
         client.captureMessage("third", level: .error)
 
-        await Task.yield()
-        await Task.yield()
+        await client.waitForPendingCapture()
+        await client.flush()
         await client.flush()
 
         let recordedBatchCount = await waitForRecordedBatchCount(on: transport, minimum: 2)

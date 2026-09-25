@@ -41,11 +41,7 @@ jobs:
         run: make test-ios-simulator
 
       - name: Compile against the iOS 15 deployment target
-        run: |
-          xcodebuild build \
-            -scheme debugbundle-swift-Package \
-            -destination 'generic/platform=iOS Simulator' \
-          IPHONEOS_DEPLOYMENT_TARGET=15.0
+        run: make build-ios-15
 
   current-apple-platform:
     runs-on: xcode-27

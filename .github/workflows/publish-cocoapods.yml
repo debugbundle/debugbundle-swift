@@ -25,6 +25,12 @@ jobs:
       - name: Run Swift package tests
         run: make test
 
+      - name: Run iOS simulator tests
+        run: make test-ios-simulator
+
+      - name: Compile against the iOS 15 deployment target
+        run: make build-ios-15
+
       - name: Build Swift package
         run: make build
 
