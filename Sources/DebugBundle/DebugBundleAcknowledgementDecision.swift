@@ -20,7 +20,8 @@ func decideDebugBundleAcknowledgement(
     let rejectedIndices = acknowledgement.errors.map(\.index)
     let isConsistent = acknowledgement.accepted >= 0
         && acknowledgement.rejected >= 0
-        && acknowledgement.accepted + acknowledgement.rejected == events.count
+        && acknowledgement.accepted <= events.count
+        && acknowledgement.rejected == events.count - acknowledgement.accepted
         && acknowledgement.errors.count == acknowledgement.rejected
         && Set(rejectedIndices).count == rejectedIndices.count
         && rejectedIndices.allSatisfy(events.indices.contains)

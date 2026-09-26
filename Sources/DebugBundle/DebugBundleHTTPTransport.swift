@@ -26,7 +26,7 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
         }
 
         let retryAfterValue = httpResponse.value(forHTTPHeaderField: "Retry-After")
-        let retryAfter = retryAfterValue.flatMap(TimeInterval.init).map { min($0, 300) }
+        let retryAfter = retryAfterValue.flatMap(parseRetryAfter)
         let ingestionResponse = decodeIngestionResponse(from: data)
         return DebugBundleTransportResult(
             statusCode: httpResponse.statusCode,
@@ -35,6 +35,26 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
             acknowledgement: ingestionResponse?.acknowledgement,
             acknowledgementRequired: (200 ..< 300).contains(httpResponse.statusCode)
         )
+    }
+
+    private func parseRetryAfter(_ value: String) -> TimeInterval? {
+        if let seconds = TimeInterval(value) {
+            return seconds.isFinite ? min(max(0, seconds), 300) : nil
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.isLenient = false
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = formatter.timeZone
+        formatter.twoDigitStartDate = calendar.date(byAdding: .year, value: -50, to: Date())
+        for format in ["EEE, dd MMM yyyy HH:mm:ss 'GMT'", "EEEE, dd-MMM-yy HH:mm:ss 'GMT'", "EEE MMM d HH:mm:ss yyyy"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) {
+                return min(max(0, date.timeIntervalSinceNow), 300)
+            }
+        }
+        return nil
     }
 
     private func decodeIngestionResponse(from data: Data) -> DebugBundleIngestionResponse? {

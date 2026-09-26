@@ -1,6 +1,6 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.0.0-orange)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.0.1-orange)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -21,7 +21,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 .dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.0.0")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.0.1")
 ],
 .targets: [
 	.target(
@@ -37,7 +37,7 @@ Add the package to your app target:
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.0.0` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.0.1` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -45,7 +45,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", "~> 1.1"
+	pod "DebugBundle", "~> 3.0"
 end
 ```
 
@@ -192,7 +192,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.0.0` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.0.1` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -260,7 +260,7 @@ CheckoutView()
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current package release | `v3.0.0` |
+| Current package release | `v3.0.1` |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -279,7 +279,7 @@ Publish from an authenticated CocoaPods trunk session:
 make pod-publish
 ```
 
-GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v3.0.0` for podspec version `3.0.0`.
+GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v3.0.1` for podspec version `3.0.1`.
 
 ## Dependency Alignment
 
@@ -294,6 +294,7 @@ If you use Alamofire or SwiftLog integration, stay within the package-declared d
 - Sensitive-field redaction before queue persistence or transport
 - Durable file-backed offline queue with TTL and byte and event bounds
 - Connectivity-aware deferred delivery with bounded retry windows and `Retry-After` handling
+- HTTP and custom retry hints must be finite; invalid hints use safe fallback backoff and valid numeric hints are capped at five minutes.
 - Automatic flush triggers on batch size, interval, foreground and background lifecycle, and explicit flush
 - Duplicate suppression and `error_suppressed` aggregate emission
 - Session sampling, per-session caps, breadcrumb buffering, and always-on probes
@@ -390,3 +391,7 @@ See also:
 ## License
 
 Apache-2.0
+
+### Ingestion retry hints
+
+Retryable partial acknowledgements, malformed acknowledgements and server failures honor bounded `Retry-After` hints, including HTTP-date headers. Delays are capped at five minutes and measured from response receipt. Existing fallback backoff remains in effect when no hint is supplied.

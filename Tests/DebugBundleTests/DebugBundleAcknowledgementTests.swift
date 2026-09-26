@@ -3,6 +3,22 @@ import XCTest
 @testable import DebugBundle
 
 final class DebugBundleAcknowledgementTests: XCTestCase {
+    func testOverflowingAcknowledgementCountsRetainQueueWithoutCrashing() async {
+        for (accepted, rejected) in [(Int.max, 1), (1, Int.max), (Int.min, 1)] {
+            let queue = AcknowledgementQueueStore()
+            let client = makeClient(
+                transport: AcknowledgementTransport(result: .init(statusCode: 202,
+                    acknowledgement: .init(accepted: accepted, rejected: rejected, errors: []))),
+                queue: queue
+            )
+            client.captureMessage("retain", level: .error)
+            await client.flush()
+            XCTAssertEqual(client.status, .degraded)
+            XCTAssertNil(client.lastEventAt)
+            XCTAssertEqual(queue.events.count, 1)
+        }
+    }
+
     func testAllRejectedAcknowledgementNeverReportsDeliverySuccess() async {
         let queue = AcknowledgementQueueStore()
         let transport = AcknowledgementTransport(

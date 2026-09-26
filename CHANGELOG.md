@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-26
+
+### Fixed
+
+- Reject overflowing acknowledgement counts without trapping; honor retry hints after partial/malformed acknowledgements and accept HTTP-date headers.
+- Reject nonfinite HTTP/custom retry hints and use finite fallback backoff, preserving retained events and recovery. Numeric hints remain capped at five minutes.
+- Align the CocoaPods installation example with the published 3.x SDK family.
+
 ## [3.0.0] - 2026-09-25
 
 ### Changed

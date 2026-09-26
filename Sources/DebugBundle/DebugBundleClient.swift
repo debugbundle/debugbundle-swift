@@ -769,7 +769,7 @@ public final class DebugBundleClient {
                 recordedAt: now
             )
             statusValue = .degraded
-            scheduleRetryLocked(retryAfter: nil, now: now)
+            scheduleRetryLocked(retryAfter: result.retryAfter, now: now)
             retainCurrentBatchLocked()
 
         case .legacyTransportSuccess:
@@ -811,7 +811,7 @@ public final class DebugBundleClient {
                 retryAttemptCount = 0
             } else {
                 statusValue = .degraded
-                scheduleRetryLocked(retryAfter: nil, now: now)
+                scheduleRetryLocked(retryAfter: result.retryAfter, now: now)
             }
         }
     }
@@ -863,7 +863,7 @@ public final class DebugBundleClient {
     private func scheduleRetryLocked(retryAfter: TimeInterval?, now: Date) {
         retryAttemptCount += 1
         let fallbackDelay = min(pow(2, Double(max(0, retryAttemptCount - 1))), 300)
-        let resolvedDelay = retryAfter ?? fallbackDelay
+        let resolvedDelay = retryAfter.flatMap { $0.isFinite ? $0 : nil } ?? fallbackDelay
         let boundedDelay = min(max(0, resolvedDelay), 300)
         nextFlushAllowedAt = now.addingTimeInterval(boundedDelay)
     }
