@@ -20,7 +20,7 @@ final class DebugBundlePrivacyTests: XCTestCase {
             .appendingPathComponent("fixtures/privacy-conformance.json")
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: fixtureURL))
         XCTAssertEqual(fixture.policy, "telemetry-privacy-v1")
-        XCTAssertEqual(fixture.cases.count, 24)
+        XCTAssertEqual(fixture.cases.count, 28)
         let redactor = DebugBundleRedactor(sensitiveKeys: [])
         for item in fixture.cases {
             XCTAssertEqual(redactor.sanitizeJSON(item.input), item.expected, item.id)

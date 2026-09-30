@@ -173,7 +173,7 @@ struct DebugBundleTelemetryPrivacy {
     private static let expression4 = try? NSRegularExpression(pattern: #"(?:password|token|secret|authorization|cookie)%3[ad]"#, options: [.caseInsensitive])
     private static let expression5 = try? NSRegularExpression(pattern: #"\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\s*:\s*[^\r\n]*"#, options: [.caseInsensitive])
     private static let expression6 = try? NSRegularExpression(pattern: #"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]{6,}"#, options: [.caseInsensitive])
-    private static let expression7 = try? NSRegularExpression(pattern: #"\bdbundle_(?:proj|mem|probe|agent)_[A-Za-z0-9_-]+\b"#, options: [.caseInsensitive])
+    private static let expression7 = try? NSRegularExpression(pattern: #"\bdbundle_(?:proj|mem|probe|agent|anl|anr|ah)_[A-Za-z0-9_-]+\b"#, options: [.caseInsensitive])
     private static let expression8 = try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9_-])(?:[0-9][ -]?){12,18}[0-9](?![A-Za-z0-9_-])"#, options: [.caseInsensitive])
     private static let expression9 = try? NSRegularExpression(pattern: #"\bhttps?://[^\s<>"']+"#, options: [.caseInsensitive])
 
