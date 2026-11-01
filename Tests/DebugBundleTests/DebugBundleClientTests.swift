@@ -647,13 +647,16 @@ final class DebugBundleClientTests: XCTestCase {
     }
 }
 
-private func waitForFetchCount(on client: CountingRemoteConfigClient, minimum: Int, maxYields: Int = 20) async -> Int {
-    for _ in 0 ..< maxYields {
+private func waitForFetchCount(on client: CountingRemoteConfigClient, minimum: Int) async -> Int {
+    // Yield counts do not guarantee another task ran, particularly on a cold
+    // simulator. Wait for the observed fetch with a monotonic test-only deadline.
+    let deadline = ProcessInfo.processInfo.systemUptime + 5
+    while ProcessInfo.processInfo.systemUptime < deadline {
         let count = await client.fetchCount()
         if count >= minimum {
             return count
         }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_000_000)
     }
     return await client.fetchCount()
 }
