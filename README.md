@@ -1,6 +1,6 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.0.1-orange)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.0--candidate-orange)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -11,6 +11,62 @@ Version **3.0.0** changes hook and persistence timing. Review [the v3 migration]
 Swift is a mobile client SDK, not a browser relay host. It sends mobile events to the configured ingestion endpoint and uses explicit first-party URLSession or Alamofire instrumentation for trace correlation; browser relay settings such as `transportMode`, `allowedOrigins`, and CORS preflight handling belong to the Browser SDK plus a backend/server SDK relay.
 
 The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle`.
+
+## Unpublished 3.1.0 evidence candidate
+
+The current working candidate adds `withEvidenceOptions(DebugBundleEvidenceOptions(...))` without changing existing configuration initializers. Structured exception evidence defaults on only for a proven complete delivery path; standalone recovery defaults off. Custom transports and opaque relays require an explicit complete-path `DebugBundleEvidenceCapabilities` pin. Native HTTP/config discovers support through the existing requests, with bounded identity/UTF-8 responses and a total request deadline. Missing or unknown proof downgrades optional evidence on retries while preserving the protected primary failure.
+
+Native cause collection runs on the existing delivery worker and keeps only weak error references across admission. Exact Foundation `NSError` values support `NSUnderlyingErrorKey` and `NSMultipleUnderlyingErrorsKey`, under eight-node/four-depth/five-child and 32KiB addition bounds. Root `Thread.callStackSymbols` locations are capture-time evidence. Underlying errors do not acquire fabricated throw-site stacks; arbitrary Swift value errors and unsafe custom native accessors report unavailable details. No Mirror, frame-local inspection or symbolication is added. A collected or deallocated error cannot be recovered retrospectively. Native/runtime, packaged-artifact and complete parity qualification remain in progress; this candidate is not published. See [3.1 compatibility and evidence guidance](MIGRATION-3.1.md).
+
+### Explicit recovery and operation scope
+
+Opt in with `config.withEvidenceOptions(.init(captureRecoveryObservations: true))`.
+The existing config/ACK lifecycle must prove support through the complete path.
+`client.evidenceCapabilities` and the equivalent facade property expose the
+intersection of that proof, local options and the current diagnostic policy.
+
+```swift
+let scope = client.beginOperation()
+defer { scope.close() }
+let failureRef = UUID().uuidString.lowercased()
+client.captureException(error, context: DebugBundleEvidenceContext.forFailure(
+    failureRef, scope: scope.evidenceScope))
+client.captureRecovery(.init(
+    failureRef: failureRef, attemptId: UUID().uuidString.lowercased(),
+    state: "attempt_completed", scope: scope.evidenceScope, statusCode: 200))
+```
+
+Manual scopes are synchronous and thread local. Use `withOperationContext { ... }`
+(or its async overload) across suspension points; ended parent scopes cannot be
+reused by outliving child tasks. Reuse a fresh attempt ID for observations of the
+same attempt. States are `attempt_started`, `attempt_completed`, `attempt_failed`,
+`recovery_observed` and `failure_persisted`. Report semantic recovery only when the
+application actually observes it. HTTP 200 and completion alone leave recovery
+unknown. Explicit context uses the existing queue, policy, sampling, quotas and
+metering; it is independent of remote probes. It is bounded to 50 failure windows,
+five attempts and 20 observations per failure, five minutes and 64KiB of combined
+metadata/pending data. Offline retention cannot renew an expired window.
+
+### Crash and queue handoff
+
+`DebugBundleCrashReporter` keeps small, private, protected runtime reports with
+original capture time and stable identity. The no-reporter
+`replayPendingCrash(store:)` and `replayPendingCrash(store:client:)` overloads keep
+the record until acknowledged durable local persistence or a canonical ingestion
+ACK. The optional `DebugBundleAcknowledgingQueueStore` protocol lets a custom
+store explicitly confirm persistence; legacy `Void` stores cannot provide that
+proof. Explicit legacy `report:` callbacks retain their caller-owned immediate
+handoff behaviour. A previous crash never consumes current-launch probes or
+breadcrumbs. Supplied native fatal frames are bounded to eight frames and 4KiB
+of combined evidence; an unavailable throw trace is never replaced with a
+capture trace labelled as the original. Default persisted trace origin is unknown;
+use the explicit `traceOrigin:` overload when the reporter knows it.
+
+Caught Objective-C exceptions retain supported native frames via
+`DebugBundleObjCExceptionBridge`; unsafe custom getters are not inspected. Native
+fatal storage is best effort and avoids waiting for another SDK store operation.
+It does not promise recovery from hard kill, OOM, signal-handler restrictions or
+unavailable storage. It adds no signal handler or third-party crash backend.
 
 ## Installation
 
@@ -192,7 +248,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.0.1` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.1.0` candidate | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -256,11 +312,16 @@ CheckoutView()
 
 ## Runtime And Platform Support
 
+Swift 5.10–6.1 uses the original SwiftLog `LogHandler` interface. Swift 6.2+
+retains the error-bearing `LogEvent` overload and requires swift-log 1.12.0+.
+SwiftPM selects compatible dependency versions for the active compiler; see
+[3.1 compatibility guidance](MIGRATION-3.1.md) for the older logging fallback.
+
 | Label | Runtime / platform |
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current package release | `v3.0.1` |
+| Published package baseline | `v3.0.1`; local unpublished candidate `3.1.0` |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -395,3 +456,36 @@ Apache-2.0
 ### Ingestion retry hints
 
 Retryable partial acknowledgements, malformed acknowledgements and server failures honor bounded `Retry-After` hints, including HTTP-date headers. Delays are capped at five minutes and measured from response receipt. Existing fallback backoff remains in effect when no hint is supplied.
+
+## Probe checkpoint guidance
+
+Application instrumentation supplies probe labels and bounded data. Deploy a new
+checkpoint before activating it. Remote activation affects future matching calls
+when policy permits; it does not inject code or recover unretained measurements.
+Built-in runtime/error/device collectors keep their documented SDK settings.
+
+Use fixed labels and allowlisted technical states: `media.preview.checkpoint`
+(stage/input kind/attempt), `auth.session.checkpoint` (observed session presence
+and result), `job.dependency.checkpoint` (named dependency/attempt/result), or
+`cache.preview.checkpoint` (hit/miss/coarse age bucket). Omit customer identifiers,
+tokens/cookies, cache keys, URLs and raw payloads. HTTP 200 or attempt completion
+alone does not establish semantic recovery.
+
+Empty probe data means no matching retained observation for the selected sample
+window. It does not confirm activation delivery to every SDK or execution of a
+label. Check the deployed SDK/wrapper version, instrumentation, scope, expiry,
+policy, sampling and delivery receipts. See the [probe recipes](https://debugbundle.com/docs/probes#bounded-checkpoint-recipes).
+
+`make evidence-performance` runs the native release-build comparison for 20 identical
+NSError/cause and explicit recovery pairs, disabled/enabled and under empty/full queue
+pressure. It reports caller and deferred flush time, Darwin allocator live byte/block
+deltas and retained queue bytes, with one warm-up and three reported repetitions.
+Live allocator deltas include process activity; they are not cumulative allocation
+churn or peak RSS. The Make target isolates the four lanes in separate test processes;
+allocator high-water values include initialization and the warm-up. Signed deltas may
+include deferred cleanup. Caller timing includes temporary autorelease cleanup.
+Synthetic configuration, transport and held queue startup keep all
+traffic local and setup outside capture measurements. The test checks native causes,
+original error priority and existing diagnostic/count/byte ceilings. Use the existing
+iOS simulator target with `XCODE_TEST_ARGS='-configuration Release ENABLE_TESTABILITY=YES -only-testing:DebugBundleTests/DebugBundleEvidencePerformanceTests'`
+for the same comparison on the simulator; neither host nor simulator proves device costs.

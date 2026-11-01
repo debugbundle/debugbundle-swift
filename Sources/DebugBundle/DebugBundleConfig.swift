@@ -84,6 +84,7 @@ public struct DebugBundleConfig: Sendable {
     public var redactFields: Set<String>
     public var headerAllowlist: Set<String>
     public var sdkVersion: String
+    public var evidenceOptions = DebugBundleEvidenceOptions()
     public var beforeSend: DebugBundleBeforeSend?
 
     public init(
@@ -118,7 +119,7 @@ public struct DebugBundleConfig: Sendable {
         probeFlushOnError: Bool = true,
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
-        sdkVersion: String = "3.0.1",
+        sdkVersion: String = "3.1.0",
         beforeSend: DebugBundleBeforeSend? = nil
     ) {
         self.projectToken = projectToken

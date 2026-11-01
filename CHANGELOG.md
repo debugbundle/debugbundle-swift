@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 3.1.0 candidate (not published)
+
+- Restore actual Swift5.10 compatibility in the logging adapter; retain the modern SwiftLog event overload on Swift6.2+ and declare its existing swift-log1.12.0 minimum explicitly.
+- Add negotiated bounded NSError cause evidence, explicit recovery observations, operation scopes and complete canonical bridge preservation, retaining legacy stacks/grouping and capture signatures.
+- Validate full owned hook candidates, apply privacy/final policy again and reduce optional evidence on proof loss without restoring pre-hook fields.
+- Bound native response/request bytes and shared flush deadlines; retain sender/store snapshot ownership through partitioned delivery, partial ACK and retries.
+- Protect native crash storage, preserve saved time/origin/identity and keep default replay until proven durable handoff; retain explicit legacy reporter callbacks.
+- Include Objective-C implementations in the unchanged per-file coverage gate. See [3.1 guidance](MIGRATION-3.1.md).
+
 ## [3.0.1] - 2026-09-26
 
 ### Fixed

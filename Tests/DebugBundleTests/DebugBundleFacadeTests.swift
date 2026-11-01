@@ -14,6 +14,7 @@ final class DebugBundleFacadeTests: XCTestCase {
             DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
+                endpoint: URL(string: "http://127.0.0.1:0/v1/events")!,
                 batchSize: 100,
                 flushInterval: 60
             )
@@ -22,6 +23,7 @@ final class DebugBundleFacadeTests: XCTestCase {
             DebugBundleConfig(
                 projectToken: "token",
                 service: "checkout-ios",
+                endpoint: URL(string: "http://127.0.0.1:0/v1/events")!,
                 batchSize: 100,
                 flushInterval: 60
             ),

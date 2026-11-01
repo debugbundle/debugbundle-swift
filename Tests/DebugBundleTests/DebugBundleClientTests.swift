@@ -555,6 +555,7 @@ final class DebugBundleClientTests: XCTestCase {
                 line: 20
             )
         }
+        #if compiler(>=6.2)
         handler.log(
             event: LogEvent(
                 level: .error,
@@ -567,6 +568,7 @@ final class DebugBundleClientTests: XCTestCase {
                 line: 30
             )
         )
+        #endif
 
         Thread.current.threadDictionary["com.debugbundle.swiftlog.recursing"] = true
         handler.log(
@@ -580,13 +582,17 @@ final class DebugBundleClientTests: XCTestCase {
         )
         Thread.current.threadDictionary.removeObject(forKey: "com.debugbundle.swiftlog.recursing")
 
+        #if compiler(>=6.2)
         XCTAssertEqual(captured.map(\.0), [.debug, .info, .info, .warning, .error, .error, .error])
+        XCTAssertTrue(captured.last?.2["error"] is SampleLogError)
+        #else
+        XCTAssertEqual(captured.map(\.0), [.debug, .info, .info, .warning, .error, .error])
+        #endif
         XCTAssertEqual(captured.first?.2["base"] as? String, "override")
         XCTAssertEqual(captured.first?.2["convertible"] as? String, "42")
         XCTAssertEqual(captured.first?.2["array"] as? [String], ["one", "two"])
         XCTAssertEqual((captured.first?.2["dictionary"] as? [String: Any])?["nested"] as? String, "yes")
         XCTAssertEqual(captured.first?.2["file"] as? String, "Test.swift")
-        XCTAssertTrue(captured.last?.2["error"] is SampleLogError)
     }
 
     func testOpportunisticRemoteConfigRefreshUsesBoundedIntervalForFlushAndForeground() async {

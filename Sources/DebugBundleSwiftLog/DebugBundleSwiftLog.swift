@@ -34,6 +34,7 @@ public struct DebugBundleLogHandler: LogHandler {
         }
     }
 
+    #if compiler(>=6.2)
     public func log(event: LogEvent) {
         emitLog(
             level: event.level,
@@ -46,6 +47,7 @@ public struct DebugBundleLogHandler: LogHandler {
             error: event.error
         )
     }
+    #endif
 
     public func log(level: Logger.Level, message: Logger.Message, metadata explicitMetadata: Logger.Metadata?, source: String, file: String, function: String, line: UInt) {
         emitLog(

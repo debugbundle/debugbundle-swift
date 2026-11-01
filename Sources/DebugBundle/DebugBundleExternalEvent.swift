@@ -4,6 +4,29 @@ func parseDebugBundleExternalEvent(
     _ event: [String: JSONValue],
     fallbackDevice: DebugBundleDeviceContext
 ) -> DebugBundleEventEnvelope? {
+    var authored = event
+    authored.removeValue(forKey: "device")
+    // JS has no native device collector. Validate its complete canonical event
+    // using a local placeholder, then hydrate metadata on the existing worker.
+    if event["sdk_name"]?.stringValue == reactNativeSDKName,
+       event["event_type"]?.stringValue == DebugBundleEventType.frontendException,
+       var payload = authored["payload"]?.objectValue, payload["device"] == nil {
+        let device = event["device"]?.objectValue.map(swiftDeviceContext(fromExternalDevice:)) ?? fallbackDevice
+        payload["device"] = .object(canonicalSwiftDevice(device, payload: [:]))
+        authored["payload"] = .object(payload)
+    }
+    if (try? DebugBundleEvidenceWire.accepts(.object(authored))) == true,
+       let data = try? JSONEncoder().encode(JSONValue.object(authored)),
+       let decoded = try? JSONDecoder().decode(DebugBundleEventEnvelope.self, from: data) { return decoded }
+    let payload = event["payload"]?.objectValue ?? [:]
+    let enriched = event["event_type"]?.stringValue == "diagnostic_context" ||
+        ["exception_evidence", "execution", "resource_observations"].contains(where: { payload[$0] != nil }) ||
+        DebugBundleEvidenceWire.reference(event["context"]?.objectValue?["evidence_reference"])
+    if enriched { return nil }
+    if let correlation = event["correlation"], correlation != .null {
+        guard let fields = correlation.objectValue, Set(fields.keys).isSubset(of: ["request_id", "trace_id", "session_id", "user_id_hash"]),
+              fields.values.allSatisfy({ $0 == .null || $0.stringValue != nil }) else { return nil }
+    }
     guard externalEventRootKeys.isSuperset(of: event.keys) else {
         return nil
     }
@@ -38,7 +61,7 @@ func parseDebugBundleExternalEvent(
         occurredAt: occurredAt
     )
     let correlation = event["correlation"]?.objectValue
-    return DebugBundleEventEnvelope(
+    let migrated = DebugBundleEventEnvelope(
         sdkName: reactNativeSDKName,
         sdkVersion: sdkVersion,
         service: serviceName,
@@ -46,7 +69,7 @@ func parseDebugBundleExternalEvent(
         eventType: eventType,
         occurredAt: occurredAt,
         correlation: correlation.map {
-            DebugBundleCorrelation(traceId: nullableString($0["trace_id"]))
+            DebugBundleCorrelation(requestId: nullableString($0["request_id"]), traceId: nullableString($0["trace_id"]), sessionId: nullableString($0["session_id"]), userIdHash: nullableString($0["user_id_hash"]))
         },
         payload: canonical.payload,
         device: externalDevice,
@@ -59,6 +82,7 @@ func parseDebugBundleExternalEvent(
         serviceFramework: service["framework"]?.stringValue,
         context: event["context"]?.objectValue ?? canonical.context
     )
+    return isValidBeforeSendEvent(migrated) ? migrated : nil
 }
 
 func shouldCaptureDebugBundleExternalEnvelope(
@@ -154,6 +178,7 @@ private let externalEventTypes: Set<String> = [
     DebugBundleEventType.probeEvent
 ]
 private let externalSessionEventTypes: Set<String> = [
+    "diagnostic_context",
     DebugBundleEventType.frontendBreadcrumb,
     DebugBundleEventType.logEvent,
     DebugBundleEventType.requestEvent

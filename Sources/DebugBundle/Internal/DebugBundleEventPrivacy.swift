@@ -9,7 +9,7 @@ func protectDebugBundleEvent(_ original: DebugBundleEventEnvelope, redactor: Deb
     func optionalString(_ value: String?) -> String? {
         value.flatMap(string)
     }
-    for identity in [original.schemaVersion, original.sdkName, original.sdkVersion, original.correlation?.traceId].compactMap({ $0 }) {
+    for identity in [original.schemaVersion, original.sdkName, original.sdkVersion, original.correlation?.traceId, original.correlation?.requestId, original.correlation?.sessionId, original.correlation?.userIdHash].compactMap({ $0 }) {
         guard string(identity) == identity else { return nil }
     }
     guard case let .object(payload) = redactor.sanitizeJSON(.object(original.payload)),
@@ -26,14 +26,11 @@ func protectDebugBundleEvent(_ original: DebugBundleEventEnvelope, redactor: Deb
     event.service = service
     event.environment = environment
     event.serviceRuntime = runtime
+    event.serviceRuntimeIsAbsent = original.serviceRuntimeIsAbsent
     event.releaseChannel = releaseChannel
     event.appVersion = optionalString(original.appVersion)
     event.buildNumber = optionalString(original.buildNumber)
     event.serviceFramework = optionalString(original.serviceFramework)
-    if let trace = original.correlation?.traceId {
-        guard let cleaned = string(trace) else { return nil }
-        event.correlation = DebugBundleCorrelation(traceId: cleaned)
-    }
     var device = original.device
     device.appVersion = optionalString(device.appVersion)
     device.buildNumber = optionalString(device.buildNumber)

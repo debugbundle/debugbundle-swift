@@ -6,6 +6,12 @@ struct DebugBundleCanonicalEvent {
     var context: [String: JSONValue]?
 }
 
+func debugBundleMobileEventUsesDevice(_ eventType: String) -> Bool {
+    [DebugBundleEventType.frontendException, DebugBundleEventType.logEvent,
+     DebugBundleEventType.requestEvent, DebugBundleEventType.frontendBreadcrumb,
+     DebugBundleEventType.probeEvent, DebugBundleEventType.errorSuppressed].contains(eventType)
+}
+
 func canonicalizeSwiftEvent(
     eventType: String,
     payload: [String: JSONValue],
@@ -290,7 +296,7 @@ private func canonicalInlineProbeData(_ value: JSONValue?, occurredAt: String) -
     return .object(["version": .number(1), "items": .array(items)])
 }
 
-private func canonicalSwiftDevice(
+func canonicalSwiftDevice(
     _ device: DebugBundleDeviceContext,
     payload: [String: JSONValue]
 ) -> [String: JSONValue] {

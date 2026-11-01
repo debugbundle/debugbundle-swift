@@ -17,10 +17,15 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
         request.httpMethod = "POST"
         request.timeoutInterval = config.requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "X-DebugBundle-Evidence")
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         request.setValue("Bearer \(config.projectToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try encoder.encode(DebugBundleBatchRequest(events: events))
+        let body = try encoder.encode(DebugBundleBatchRequest(events: events))
+        guard events.count <= 100, body.count <= DebugBundleIngestionWire.maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
+        request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
+        let reply = try await DebugBundleHTTPReply.read(session: session, request: request, timeout: config.requestTimeout)
+        let (data, response) = (reply.data, reply.response)
         guard let httpResponse = response as? HTTPURLResponse else {
             return DebugBundleTransportResult(statusCode: 599)
         }
@@ -28,13 +33,15 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
         let retryAfterValue = httpResponse.value(forHTTPHeaderField: "Retry-After")
         let retryAfter = retryAfterValue.flatMap(parseRetryAfter)
         let ingestionResponse = decodeIngestionResponse(from: data)
-        return DebugBundleTransportResult(
+        var result = DebugBundleTransportResult(
             statusCode: httpResponse.statusCode,
             retryAfter: retryAfter,
             probeDirectives: ingestionResponse?.probeDirectives?.activeProbes,
             acknowledgement: ingestionResponse?.acknowledgement,
             acknowledgementRequired: (200 ..< 300).contains(httpResponse.statusCode)
         )
+        result.evidenceCapabilities = ingestionResponse?.evidenceCapabilities
+        return result
     }
 
     private func parseRetryAfter(_ value: String) -> TimeInterval? {
@@ -66,6 +73,7 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
 }
 
 private struct DebugBundleIngestionResponse: Codable {
+    var evidenceCapabilities: JSONValue?
     var accepted: Int?
     var rejected: Int?
     var errors: [DebugBundleIngestionError]?
@@ -83,6 +91,7 @@ private struct DebugBundleIngestionResponse: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case evidenceCapabilities = "evidence_capabilities"
         case accepted
         case rejected
         case errors

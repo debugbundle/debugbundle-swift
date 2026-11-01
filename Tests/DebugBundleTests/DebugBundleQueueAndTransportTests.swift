@@ -654,7 +654,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
         try await server.start()
         let transport = RecordingTransport()
         DebugBundle.initialize(
-            DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
+            DebugBundleConfig(projectToken: "token", service: "checkout-ios", endpoint: URL(string: "http://127.0.0.1:0/v1/events")!),
             transport: transport
         )
 
@@ -694,7 +694,7 @@ final class DebugBundleQueueAndTransportTests: XCTestCase {
 
         let transport = RecordingTransport()
         DebugBundle.initialize(
-            DebugBundleConfig(projectToken: "token", service: "checkout-ios"),
+            DebugBundleConfig(projectToken: "token", service: "checkout-ios", endpoint: URL(string: "http://127.0.0.1:0/v1/events")!),
             transport: transport
         )
 

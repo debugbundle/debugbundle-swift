@@ -146,13 +146,23 @@ public struct DebugBundleDeviceContext: Codable, Sendable, Equatable {
 
 public struct DebugBundleCorrelation: Codable, Sendable, Equatable {
     public var traceId: String?
+    public var requestId: String? = nil
+    public var sessionId: String? = nil
+    public var userIdHash: String? = nil
 
     public init(traceId: String? = nil) {
         self.traceId = traceId
     }
 
+    public init(requestId: String?, traceId: String?, sessionId: String?, userIdHash: String?) {
+        self.requestId = requestId; self.traceId = traceId; self.sessionId = sessionId; self.userIdHash = userIdHash
+    }
+
     public init(from decoder: Decoder) throws {
         let canonical = try decoder.container(keyedBy: CodingKeys.self)
+        requestId = try canonical.decodeIfPresent(String.self, forKey: .requestId)
+        sessionId = try canonical.decodeIfPresent(String.self, forKey: .sessionId)
+        userIdHash = try canonical.decodeIfPresent(String.self, forKey: .userIdHash)
         if let traceId = try canonical.decodeIfPresent(String.self, forKey: .traceId) {
             self.traceId = traceId
             return
@@ -164,9 +174,15 @@ public struct DebugBundleCorrelation: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(traceId, forKey: .traceId)
+        try container.encodeIfPresent(requestId, forKey: .requestId)
+        try container.encodeIfPresent(sessionId, forKey: .sessionId)
+        try container.encodeIfPresent(userIdHash, forKey: .userIdHash)
     }
 
     private enum CodingKeys: String, CodingKey {
+        case requestId = "request_id"
+        case sessionId = "session_id"
+        case userIdHash = "user_id_hash"
         case traceId = "trace_id"
     }
 
@@ -181,7 +197,8 @@ public struct DebugBundleEventEnvelope: Codable, Sendable, Equatable {
     public var sdkName: String
     public var sdkVersion: String
     public var service: String
-    public var serviceRuntime: String
+    public var serviceRuntime: String { didSet { serviceRuntimeIsAbsent = false } }
+    var serviceRuntimeIsAbsent = false
     public var serviceFramework: String?
     public var environment: String
     public var eventType: String
@@ -244,6 +261,7 @@ public struct DebugBundleEventEnvelope: Codable, Sendable, Equatable {
             service = descriptor.name
             environment = descriptor.environment
             serviceRuntime = descriptor.runtime ?? "swift"
+            serviceRuntimeIsAbsent = descriptor.runtime == nil
             serviceFramework = descriptor.framework
         } else {
             service = try container.decode(String.self, forKey: .service)
@@ -276,6 +294,8 @@ public struct DebugBundleEventEnvelope: Codable, Sendable, Equatable {
                 payload: decodedPayload
             )
         device = decodedDevice
+        payload = decodedPayload
+        if isValidBeforeSendEvent(self) { return }
         let canonical = canonicalizeSwiftEvent(
             eventType: eventType,
             payload: decodedPayload,
@@ -287,12 +307,9 @@ public struct DebugBundleEventEnvelope: Codable, Sendable, Equatable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        let canonical = canonicalizeSwiftEvent(
-            eventType: eventType,
-            payload: payload,
-            device: device,
-            occurredAt: occurredAt
-        )
+        let canonical = isValidBeforeSendEvent(self)
+            ? DebugBundleCanonicalEvent(payload: payload, context: context)
+            : canonicalizeSwiftEvent(eventType: eventType, payload: payload, device: device, occurredAt: occurredAt)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(eventId, forKey: .eventId)
@@ -302,7 +319,7 @@ public struct DebugBundleEventEnvelope: Codable, Sendable, Equatable {
             DebugBundleServiceDescriptor(
                 name: service,
                 environment: environment,
-                runtime: serviceRuntime,
+                runtime: serviceRuntimeIsAbsent ? nil : serviceRuntime,
                 framework: serviceFramework
             ),
             forKey: .service
@@ -403,6 +420,7 @@ public enum DebugBundleEventType {
 }
 
 public struct DebugBundleTransportResult: Sendable, Equatable {
+    public internal(set) var evidenceCapabilities: JSONValue? = nil
     public var statusCode: Int
     public var retryAfter: TimeInterval?
     public var probeDirectives: [DebugBundleRemoteProbeDirective]?

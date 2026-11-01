@@ -1,4 +1,6 @@
 SHELL := /bin/sh
+SWIFT_TEST_ARGS ?=
+XCODE_TEST_ARGS ?=
 
 .PHONY: test
 test: coverage
@@ -6,17 +8,36 @@ test: coverage
 .PHONY: test-filtered
 test-filtered:
 	test -n "$(FILTER)"
-	swift test --filter "$(FILTER)"
+	swift test $(SWIFT_TEST_ARGS) --filter "$(FILTER)"
+
+.PHONY: evidence-performance
+evidence-performance:
+	swift test --configuration release $(SWIFT_TEST_ARGS) list
+	@set -eu; for lane in off-empty off-full on-empty on-full; do \
+	  EVIDENCE_PERFORMANCE_CASE=$$lane swift test --skip-build --configuration release $(SWIFT_TEST_ARGS) --filter DebugBundleEvidencePerformanceTests; \
+	done
 
 .PHONY: coverage
 coverage:
-	swift test --enable-code-coverage
+	swift test $(SWIFT_TEST_ARGS) --enable-code-coverage -Xcc -fprofile-instr-generate -Xcc -fcoverage-mapping
+	$(MAKE) coverage-check
+
+.PHONY: coverage-check
+coverage-check:
 	COVERAGE_PATH="$$(swift test --show-codecov-path)"; \
 	python3 ./scripts/check-coverage.py "$$COVERAGE_PATH"
 
 .PHONY: smoke-spm
 smoke-spm:
 	./scripts/smoke-spm.sh
+
+.PHONY: evidence-manifest
+evidence-manifest:
+	python3 scripts/evidence-artifact-manifest.py
+
+.PHONY: smoke-source-artifact
+smoke-source-artifact: evidence-manifest
+	sh scripts/smoke-source-artifact.sh
 
 .PHONY: smoke-cocoapods
 smoke-cocoapods:
@@ -31,7 +52,7 @@ smoke-cocoapods-published:
 test-ios-simulator:
 	DESTINATION="$${IOS_SIMULATOR_DESTINATION:-$$(sh ./scripts/resolve-ios-simulator-destination.sh)}"; \
 	echo "Using iOS simulator destination: $$DESTINATION"; \
-	xcodebuild test -scheme debugbundle-swift-Package -destination "$$DESTINATION" -parallel-testing-enabled NO
+	xcodebuild test -scheme debugbundle-swift-Package -destination "$$DESTINATION" -parallel-testing-enabled NO $(XCODE_TEST_ARGS)
 
 .PHONY: build-ios-15
 build-ios-15:

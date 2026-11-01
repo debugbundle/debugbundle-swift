@@ -16,12 +16,18 @@ final class DebugBundleDeliveryQueue {
         var event: DebugBundleEventEnvelope
         let deferredError: DebugBundleDeferredError?
         let needsDeviceContext: Bool
+        let runBeforeSend: Bool
+        let ownsExceptionContext: Bool
+        var onRetained: (() -> Void)?
         var bytes: Int
         let capturedAt: Date
         var ready: Bool
         var leases = 0
+        var needsResize = false
         var removed = false
-        init(_ event: DebugBundleEventEnvelope, bytes: Int, capturedAt: Date, ready: Bool, deferredError: DebugBundleDeferredError?, needsDeviceContext: Bool) {
+        init(_ event: DebugBundleEventEnvelope, bytes: Int, capturedAt: Date, ready: Bool, deferredError: DebugBundleDeferredError?, needsDeviceContext: Bool, runBeforeSend: Bool, onRetained: (() -> Void)?) {
+            self.ownsExceptionContext = runBeforeSend && deferredError != nil
+            self.runBeforeSend = runBeforeSend; self.onRetained = onRetained
             self.needsDeviceContext = needsDeviceContext
             self.deferredError = deferredError
             self.event = event; self.bytes = bytes; self.capturedAt = capturedAt; self.ready = ready
@@ -33,8 +39,13 @@ final class DebugBundleDeliveryQueue {
     private let store: DebugBundleQueueStoring
     private let clock: () -> Date
     private let protect: (DebugBundleEventEnvelope) -> DebugBundleEventEnvelope?
-    private let prepare: (DebugBundleEventEnvelope, Date, DebugBundleDeferredError?, Bool) -> DebugBundleEventEnvelope?
+    private let prepare: (DebugBundleEventEnvelope, Date, DebugBundleDeferredError?, Bool, Bool) -> DebugBundleEventEnvelope?
     private let pressureEvent: (Pressure) -> DebugBundleEventEnvelope?
+    private let onPrepared: (DebugBundleEventEnvelope) -> Void
+    private let onDropped: (DebugBundleEventEnvelope) -> Void
+    private let retainRestored: (DebugBundleEventEnvelope) -> Bool
+    private let onRestored: ([DebugBundleEventEnvelope]) -> Void
+    private let onPersisted: ([DebugBundleEventEnvelope]) -> Void
     private let onReady: () -> Void
     private var entries: [Entry] = []
     private var retainedBytes = 0
@@ -49,10 +60,16 @@ final class DebugBundleDeliveryQueue {
 
     init(config: DebugBundleConfig, store: DebugBundleQueueStoring, clock: @escaping () -> Date,
          protect: @escaping (DebugBundleEventEnvelope) -> DebugBundleEventEnvelope?,
-         prepare: @escaping (DebugBundleEventEnvelope, Date, DebugBundleDeferredError?, Bool) -> DebugBundleEventEnvelope?,
-         pressureEvent: @escaping (Pressure) -> DebugBundleEventEnvelope?, onReady: @escaping () -> Void) {
+         prepare: @escaping (DebugBundleEventEnvelope, Date, DebugBundleDeferredError?, Bool, Bool) -> DebugBundleEventEnvelope?,
+         pressureEvent: @escaping (Pressure) -> DebugBundleEventEnvelope?, onReady: @escaping () -> Void,
+         onPrepared: @escaping (DebugBundleEventEnvelope) -> Void = { _ in },
+         onDropped: @escaping (DebugBundleEventEnvelope) -> Void = { _ in },
+         onRestored: @escaping ([DebugBundleEventEnvelope]) -> Void = { _ in },
+         retainRestored: @escaping (DebugBundleEventEnvelope) -> Bool = { _ in true },
+         onPersisted: @escaping ([DebugBundleEventEnvelope]) -> Void = { _ in }) {
         self.config = config; self.store = store; self.clock = clock
         self.protect = protect; self.prepare = prepare; self.pressureEvent = pressureEvent; self.onReady = onReady
+        self.onPrepared = onPrepared; self.onDropped = onDropped; self.onRestored = onRestored; self.retainRestored = retainRestored; self.onPersisted = onPersisted
     }
 
     func start() { lock.withLock { scheduleLocked() } }
@@ -68,19 +85,22 @@ final class DebugBundleDeliveryQueue {
     }
 
     @discardableResult
-    func admit(_ event: DebugBundleEventEnvelope, ready: Bool = false, reportDrop: Bool = true, deferredError: DebugBundleDeferredError? = nil, needsDeviceContext: Bool = true) -> Bool {
+    func admit(_ event: DebugBundleEventEnvelope, ready: Bool = false, reportDrop: Bool = true, deferredError: DebugBundleDeferredError? = nil, needsDeviceContext: Bool = true, runBeforeSend: Bool = true, onRetained: (() -> Void)? = nil) -> Bool {
         guard let bytes = encodedSize(event), bytes <= min(256 * 1024, config.offlineQueueMaxBytes - 2) else {
             if reportDrop { lock.withLock { recordPressureLocked() } }
+            onDropped(event)
             return false
         }
         return lock.withLock {
             pruneLocked()
+            if !runBeforeSend, entries.contains(where: { !$0.removed && !$0.runBeforeSend && $0.event.eventId == event.eventId }) { return false }
             guard makeRoomLocked(bytes: bytes, priority: Self.priority(event), excluding: nil) else {
                 if reportDrop { recordPressureLocked() }
+                onDropped(event)
                 return false
             }
-            let occurredAt = ready ? (debugBundleParseTimestamp(event.occurredAt) ?? clock()) : clock()
-            entries.append(Entry(event, bytes: bytes, capturedAt: occurredAt, ready: ready, deferredError: deferredError, needsDeviceContext: needsDeviceContext))
+            let occurredAt = ready || !runBeforeSend ? (debugBundleParseTimestamp(event.occurredAt) ?? clock()) : clock()
+            entries.append(Entry(event, bytes: bytes, capturedAt: occurredAt, ready: ready, deferredError: deferredError, needsDeviceContext: needsDeviceContext, runBeforeSend: runBeforeSend, onRetained: onRetained))
             retainedBytes += bytes
             version &+= 1
             if ready { dirty = true }
@@ -101,13 +121,77 @@ final class DebugBundleDeliveryQueue {
     var retainedCount: Int { lock.withLock { entries.count } }
     var byteCount: Int { lock.withLock { retainedBytes + 2 } }
 
-    func takeBatch() -> Batch? {
+    func takeBatch(includeDiagnostics: Bool = true) -> Batch? {
         lock.withLock {
             pruneLocked()
-            let selected = Array(entries.filter { $0.ready && !$0.removed }.prefix(config.batchSize))
+            let selected = Array(entries.filter { $0.ready && !$0.removed && (includeDiagnostics || $0.event.eventType != "diagnostic_context") }.prefix(config.batchSize))
             guard !selected.isEmpty else { return nil }
             selected.forEach { $0.leases += 1 }
             return Batch(ids: selected.map(\.id), events: selected.map(\.event))
+        }
+    }
+
+    /// Final policy/proof reduction runs outside queue locks, retaining the same ownership IDs.
+    func refineBatch(_ batch: Batch, transform: (DebugBundleEventEnvelope) -> DebugBundleEventEnvelope?) -> Batch? {
+        let candidates = batch.events.map { event -> (DebugBundleEventEnvelope, Int)? in
+            guard let changed = transform(event), let bytes = encodedSize(changed) else { return nil }
+            return (changed, bytes)
+        }
+        return lock.withLock {
+            var ids: [UUID] = [], events: [DebugBundleEventEnvelope] = []
+            for (index, id) in batch.ids.enumerated() {
+                guard let entry = entries.first(where: { $0.id == id }) else { continue }
+                if !entry.removed, let (event, bytes) = candidates[index], bytes <= entry.bytes,
+                   clock().timeIntervalSince(entry.capturedAt) <= config.offlineQueueTtl {
+                    if event != entry.event { dirty = true }
+                    if bytes < entry.bytes { entry.needsResize = true }
+                    entry.event = event
+                    ids.append(id); events.append(event)
+                } else {
+                    entry.removed = true; entry.leases -= 1; dirty = true
+                }
+            }
+            releaseRemovedLocked()
+            version &+= 1
+            if dirty { scheduleLocked() }
+            return ids.isEmpty ? nil : Batch(ids: ids, events: events)
+        }
+    }
+
+    /// Compatibility reduction preserves the latest hook identity and ownership indices.
+    func rewriteForRetry(_ batch: Batch, replacements: [Int: DebugBundleEventEnvelope]) -> (Batch, Set<Int>) {
+        let sized = replacements.compactMap { index, event -> (Int, DebugBundleEventEnvelope, Int)? in
+            guard batch.events.indices.contains(index), event.eventId == batch.events[index].eventId,
+                  event.eventType == batch.events[index].eventType, let bytes = encodedSize(event) else { return nil }
+            return (index, event, bytes)
+        }
+        return lock.withLock {
+            var events = batch.events, rewritten = Set<Int>()
+            for (index, event, bytes) in sized {
+                guard let entry = entries.first(where: { $0.id == batch.ids[index] }), !entry.removed, bytes <= entry.bytes else { continue }
+                if bytes < entry.bytes { entry.needsResize = true }
+                entry.event = event
+                events[index] = event; rewritten.insert(index); dirty = true
+            }
+            if !rewritten.isEmpty { version &+= 1; scheduleLocked() }
+            return (Batch(ids: batch.ids, events: events), rewritten)
+        }
+    }
+
+    /// The sender closure still owns its initial snapshot while later chunks await HTTP.
+    func retainSnapshot(_ batch: Batch) {
+        lock.withLock {
+            let ids = Set(batch.ids)
+            for entry in entries where ids.contains(entry.id) { entry.leases += 1 }
+        }
+    }
+    func releaseSnapshot(_ batch: Batch) {
+        lock.withLock {
+            let ids = Set(batch.ids)
+            for entry in entries where ids.contains(entry.id) { entry.leases -= 1 }
+            releaseRemovedLocked()
+            version &+= 1
+            scheduleLocked()
         }
     }
 
@@ -125,6 +209,30 @@ final class DebugBundleDeliveryQueue {
         }
     }
 
+    func acceptedCurrentContext(_ batch: Batch, acceptedIndices: Set<Int>) -> Bool {
+        lock.withLock {
+            let ids = Set(batch.ids.enumerated().compactMap { acceptedIndices.contains($0.offset) ? $0.element : nil })
+            return entries.contains { ids.contains($0.id) && $0.ownsExceptionContext && debugBundleIsException($0.event.eventType) }
+        }
+    }
+
+    func acknowledgeRetained(_ batch: Batch, acceptedIndices: Set<Int>) {
+        let selected = lock.withLock {
+            let ids = Set(batch.ids.enumerated().compactMap { acceptedIndices.contains($0.offset) ? $0.element : nil })
+            return entries.filter { ids.contains($0.id) }
+        }
+        notifyRetained(selected)
+    }
+    private func notifyRetained(_ selected: [Entry]) {
+        let callbacks = lock.withLock { selected.compactMap { entry -> (() -> Void)? in
+            let callback = entry.onRetained
+            entry.onRetained = nil
+            return callback
+        } }
+        // These SDK adapter callbacks run outside capture/queue locks on the existing worker/sender.
+        for callback in callbacks { callback() }
+    }
+
     private func scheduleLocked() {
         guard !scheduled else { return }
         scheduled = true
@@ -135,9 +243,11 @@ final class DebugBundleDeliveryQueue {
     private func drain() {
         if !loaded {
             // Recovery and mandatory historical scrubbing happen only on this worker.
-            let recovered = store.load(now: clock(), ttl: config.offlineQueueTtl)
-            for original in recovered.prefix(config.offlineQueueMaxEvents) {
-                if let event = protect(original) { admit(event, ready: true) }
+            let recovered = store.load(now: clock(), ttl: config.offlineQueueTtl).prefix(config.offlineQueueMaxEvents).compactMap(protect)
+            onRestored(recovered)
+            for event in recovered {
+                if retainRestored(event) { admit(event, ready: true) }
+                else { onDropped(event) }
             }
             lock.withLock { loaded = true; dirty = true }
         }
@@ -149,15 +259,20 @@ final class DebugBundleDeliveryQueue {
                 return entry
             }
             if let pending {
-                let result = prepare(pending.event, pending.capturedAt, pending.deferredError, pending.needsDeviceContext)
+                let result = prepare(pending.event, pending.capturedAt, pending.deferredError, pending.needsDeviceContext, pending.runBeforeSend)
                 let bytes = result.flatMap(encodedSize)
+                var retained: DebugBundleEventEnvelope?
                 lock.withLock {
                     let replacementFits = result != nil && bytes != nil && bytes! <= min(256 * 1024, config.offlineQueueMaxBytes - 2)
+                        && clock().timeIntervalSince(pending.capturedAt) <= config.offlineQueueTtl
                     if replacementFits, let result, let bytes,
                        makeRoomLocked(bytes: bytes, priority: Self.priority(result), excluding: pending) {
                         retainedBytes += bytes - pending.bytes
                         pending.event = result; pending.bytes = bytes; pending.ready = true; dirty = true
+                        retained = result
                     } else {
+                        // Reconciliation may have moved diagnostic ownership to the final hook ID.
+                        if let result { pending.event = result }
                         pending.removed = true
                         if result != nil { recordPressureLocked() }
                     }
@@ -165,22 +280,29 @@ final class DebugBundleDeliveryQueue {
                     releaseRemovedLocked()
                     version &+= 1
                 }
+                if let retained { onPrepared(retained) }
                 continue
             }
             if emitPressureIfPossible() { continue }
-            let snapshot = lock.withLock { () -> [Entry]? in
+            let snapshot = lock.withLock { () -> (entries: [Entry], events: [DebugBundleEventEnvelope])? in
                 guard dirty else { return nil }
                 dirty = false
                 let ready = entries.filter { $0.ready && !$0.removed }
                 ready.forEach { $0.leases += 1 }
-                return ready
+                return (ready, ready.map(\.event))
             }
             if let snapshot {
                 // Leased snapshot bytes/count stay owned while even a custom store stalls.
-                store.persist(snapshot.map(\.event))
+                let retained: Bool
+                if let acknowledging = store as? DebugBundleAcknowledgingQueueStore {
+                    retained = acknowledging.persistAcknowledging(snapshot.events)
+                } else { store.persist(snapshot.events); retained = false }
+                onPersisted(snapshot.events)
+                if retained { notifyRetained(snapshot.entries) }
                 lock.withLock {
-                    snapshot.forEach { $0.leases -= 1 }
+                    snapshot.entries.forEach { $0.leases -= 1 }
                     releaseRemovedLocked()
+                    version &+= 1
                 }
                 continue
             }
@@ -262,7 +384,14 @@ final class DebugBundleDeliveryQueue {
 
     private func releaseRemovedLocked() {
         entries.removeAll { entry in
-            if entry.removed && entry.leases == 0 { retainedBytes -= entry.bytes; return true }
+            if entry.removed && entry.leases == 0 { retainedBytes -= entry.bytes; onDropped(entry.event); return true }
+            // A reduced event cannot release the older version's bytes while a sender/store owns it.
+            if entry.leases == 0, entry.needsResize {
+                if let bytes = encodedSize(entry.event), bytes < entry.bytes {
+                    retainedBytes += bytes - entry.bytes; entry.bytes = bytes
+                }
+                entry.needsResize = false
+            }
             return false
         }
     }
@@ -277,7 +406,8 @@ final class DebugBundleDeliveryQueue {
 
     static func priority(_ event: DebugBundleEventEnvelope) -> Int {
         switch event.eventType {
-        case DebugBundleEventType.frontendException: return 3
+        case "diagnostic_context": return 0
+        case DebugBundleEventType.frontendException, "backend_exception": return 3
         case DebugBundleEventType.errorSuppressed: return 2
         case DebugBundleEventType.logEvent:
             return ["error", "critical"].contains(event.payload["level"]?.stringValue ?? "") ? 2 : 0

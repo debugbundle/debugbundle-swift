@@ -84,14 +84,12 @@ final class DebugBundleExternalEventTests: XCTestCase {
                 )
             )
         )
-        XCTAssertTrue(
-            client.captureExternalEvent(
-                externalEvent(
-                    eventType: DebugBundleEventType.requestEvent,
-                    payload: requestPayload(status: 503)
-                )
-            )
-        )
+        let failure = externalEvent(eventType: DebugBundleEventType.requestEvent, payload: requestPayload(status: 503))
+        let owned = DebugBundleBridgeJSON.object(failure)
+        XCTAssertNotNil(owned)
+        XCTAssertEqual(owned?["payload"]?.objectValue?["response_status"], .number(503))
+        if let owned { XCTAssertNotNil(parseDebugBundleExternalEvent(owned, fallbackDevice: DebugBundleDeviceContext())) }
+        XCTAssertTrue(client.captureExternalEvent(failure))
         await client.flush()
 
         let batches = await transport.recordedBatches()

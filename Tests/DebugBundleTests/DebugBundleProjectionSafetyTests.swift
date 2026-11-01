@@ -92,8 +92,11 @@ final class DebugBundleProjectionSafetyTests: XCTestCase {
     func testSwiftLogDoesNotInvokeCustomMetadataOrErrorDescriptions() {
         let counter = ProjectionCounter()
         let handler = DebugBundleLogHandler(label: "safe", metadata: ["value": .stringConvertible(ProjectionValue(counter: counter))], emit: { _, _, _ in })
+        handler.log(level: .error, message: "safe", metadata: nil, source: "test", file: "test.swift", function: "test", line: 1)
+        #if compiler(>=6.2)
         handler.log(event: LogEvent(level: .error, message: "safe", error: ProjectionValueError(counter: counter),
             metadata: nil, source: "test", file: "test.swift", function: "test", line: 1))
+        #endif
         XCTAssertEqual(counter.value, 0)
     }
 

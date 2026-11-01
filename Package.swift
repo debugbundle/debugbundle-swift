@@ -1,6 +1,14 @@
 // swift-tools-version: 5.10
 import PackageDescription
 
+// The structured LogEvent API used by the modern adapter requires SwiftLog1.12
+// and its Swift6.2 toolchain. Older toolchains retain the original LogHandler API.
+#if compiler(>=6.2)
+let loggingDependency = Package.Dependency.package(url: "https://github.com/apple/swift-log.git", from: "1.12.0")
+#else
+let loggingDependency = Package.Dependency.package(url: "https://github.com/apple/swift-log.git", from: "1.6.0")
+#endif
+
 let package = Package(
     name: "debugbundle-swift",
     platforms: [
@@ -42,7 +50,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
+        loggingDependency,
         .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.8.0")
     ],
     targets: [
@@ -104,7 +112,8 @@ let package = Package(
                 "DebugBundleTestSupport",
                 .product(name: "Alamofire", package: "Alamofire"),
                 .product(name: "Logging", package: "swift-log")
-            ]
+            ],
+            resources: [.process("Fixtures")]
         )
     ]
 )

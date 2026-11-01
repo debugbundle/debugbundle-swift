@@ -37,6 +37,7 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
     public var captureRequestEvents: String?
     public var captureBreadcrumbs: String?
     public var captureProbeEvents: String?
+    public var captureDiagnosticContext: Bool? = nil
     public var immediateClientErrorStatuses: [Int]
     public var immediateClientErrorPathRules: [DebugBundleImmediateClientErrorPathRule]
 
@@ -59,6 +60,7 @@ public struct DebugBundleRemoteCapturePolicy: Codable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case captureDiagnosticContext = "capture_diagnostic_context"
         case preset
         case captureLogs = "capture_logs"
         case captureRequestEvents = "capture_request_events"
@@ -95,6 +97,8 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
     public var captureProbeEvents: DebugBundleCaptureProbeEventsMode
     public var immediateClientErrorStatuses: Set<Int>
     public var immediateClientErrorPathRules: [DebugBundleImmediateClientErrorPathRule]
+    public var captureDiagnosticContext: Bool = true
+    var diagnosticsAllowed: Bool { preset != .minimal && captureDiagnosticContext }
 
     public func capturesLog(_ level: DebugBundleLogLevel, localEnabled: Bool, localThreshold: DebugBundleLogLevel) -> Bool {
         guard localEnabled, level >= localThreshold else {
@@ -208,8 +212,11 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
     }
 
     public static func fromRemotePolicy(_ policy: DebugBundleRemoteCapturePolicy?) -> DebugBundleCapturePolicy {
-        guard let policy, let preset = DebugBundleCapturePreset(rawValue: policy.preset.lowercased()) else {
-            return defaultWhenResponseOmitsPolicy()
+        guard let policy else { return defaultWhenResponseOmitsPolicy() }
+        guard let preset = DebugBundleCapturePreset(rawValue: policy.preset.lowercased()) else {
+            var result = defaultWhenResponseOmitsPolicy()
+            result.captureDiagnosticContext = policy.captureDiagnosticContext != false
+            return result
         }
 
         let defaults = defaultsForPreset(preset)
@@ -231,7 +238,8 @@ public struct DebugBundleCapturePolicy: Sendable, Equatable {
                     pathPattern: rule.pathPattern,
                     methods: Array(Set(rule.methods.map { $0.uppercased() })).sorted()
                 )
-            }
+            },
+            captureDiagnosticContext: policy.captureDiagnosticContext != false
         )
     }
 

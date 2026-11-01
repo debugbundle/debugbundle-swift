@@ -32,16 +32,26 @@ test_source = <<~SWIFT
                   flushInterval: 60,
                   requestTimeout: 10,
                   offlineQueueURL: queueURL
-              ),
+              ).withEvidenceOptions(.init(captureRecoveryObservations: true)),
               transport: DebugBundleHTTPTransport(),
-              remoteConfigClient: SmokeRemoteConfigClient(),
+              remoteConfigClient: DebugBundleHTTPRemoteConfigClient(),
               connectivityMonitor: SmokeConnectivityMonitor()
           )
 
-          client.captureException(
-              CocoaPodsSmokeFailure("clean CocoaPods consumer exception"),
-              context: ["trace_id": traceID]
-          )
+          await client.refreshRemoteConfig()
+          let scope = client.beginOperation()
+          let failureRef = UUID().uuidString.lowercased()
+          var context = DebugBundleEvidenceContext.forFailure(failureRef, scope: scope.evidenceScope)
+          context["trace_id"] = traceID
+          let original = NSError(domain: "smoke", code: 1, userInfo: [
+              NSLocalizedDescriptionKey: "clean CocoaPods consumer exception",
+              NSUnderlyingErrorKey: NSError(domain: "cause", code: 2, userInfo: [NSLocalizedDescriptionKey: "Authorization: Bearer smoke-private-token"])
+          ])
+          defer { withExtendedLifetime(original) {} }
+          client.captureException(original, context: context)
+          client.captureRecovery(.init(failureRef: failureRef, attemptId: UUID().uuidString.lowercased(),
+              state: "attempt_completed", scope: scope.evidenceScope, statusCode: 200, traceId: traceID))
+          scope.close()
           client.captureRequest(
               DebugBundleRequestInfo(
                   method: "GET",
@@ -57,24 +67,12 @@ test_source = <<~SWIFT
       }
   }
 
-  // Keep the two-event HTTP fixture independent of simulator path-change callbacks.
+  // Keep the three-event HTTP fixture independent of simulator path-change callbacks.
   private final class SmokeConnectivityMonitor: DebugBundleConnectivityMonitoring {
       var currentStatus: DebugBundleConnectivityStatus { .connected }
       func setUpdateHandler(_ handler: (@Sendable (DebugBundleConnectivityStatus) -> Void)?) {}
   }
 
-  // The installed-pod smoke verifies real ingestion; configuration fetching has
-  // its own tests and must not compete with the local transport request.
-  private struct SmokeRemoteConfigClient: DebugBundleRemoteConfigClienting {
-      func fetch(request: DebugBundleRemoteConfigRequest) async -> DebugBundleRemoteConfigResult {
-          .failed
-      }
-  }
-
-  private struct CocoaPodsSmokeFailure: Error {
-      let description: String
-      init(_ description: String) { self.description = description }
-  }
 SWIFT
 
 source_path = File.join(source_dir, "DebugBundleCocoaPodsSmokeTests.swift")

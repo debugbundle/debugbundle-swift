@@ -1,12 +1,16 @@
 import Foundation
 
+func debugBundleIsException(_ eventType: String) -> Bool {
+    eventType == DebugBundleEventType.frontendException || eventType == "backend_exception"
+}
+
 func debugBundleFingerprint(
     eventType: String,
     payload: [String: JSONValue]
 ) -> String {
     let stablePayload: JSONValue
     switch eventType {
-    case DebugBundleEventType.frontendException:
+    case DebugBundleEventType.frontendException, "backend_exception":
         let error = payload["error"]?.objectValue ?? [:]
         stablePayload = .object([
             "type": error["type"] ?? error["domain"] ?? payload["name"] ?? .string("Error"),

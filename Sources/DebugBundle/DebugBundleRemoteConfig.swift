@@ -33,6 +33,7 @@ public struct DebugBundleRemoteConfigResponse: Codable, Sendable, Equatable {
     public var activeProbes: [DebugBundleRemoteProbeDirective]
     public var pollIntervalMillis: Int
     public var triggerTokenKey: String?
+    public var evidenceCapabilities: JSONValue? = nil
     public var capturePolicy: DebugBundleRemoteCapturePolicy?
 
     public init(
@@ -57,6 +58,7 @@ public struct DebugBundleRemoteConfigResponse: Codable, Sendable, Equatable {
         case activeProbes = "active_probes"
         case pollIntervalMillis = "poll_interval_ms"
         case triggerTokenKey = "trigger_token_key"
+        case evidenceCapabilities = "evidence_capabilities"
         case capturePolicy = "capture_policy"
     }
 }
@@ -72,6 +74,8 @@ public struct DebugBundleHTTPRemoteConfigClient: DebugBundleRemoteConfigClientin
     public func fetch(request: DebugBundleRemoteConfigRequest) async -> DebugBundleRemoteConfigResult {
         var urlRequest = URLRequest(url: sdkConfigURL(for: request.endpoint))
         urlRequest.httpMethod = "GET"
+        urlRequest.setValue("1", forHTTPHeaderField: "X-DebugBundle-Evidence")
+        urlRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         urlRequest.timeoutInterval = request.timeout
         urlRequest.setValue("Bearer \(request.projectToken)", forHTTPHeaderField: "Authorization")
         if let eTag = request.eTag {
@@ -79,7 +83,8 @@ public struct DebugBundleHTTPRemoteConfigClient: DebugBundleRemoteConfigClientin
         }
 
         do {
-            let (data, response) = try await session.data(for: urlRequest)
+            let reply = try await DebugBundleHTTPReply.read(session: session, request: urlRequest, timeout: request.timeout)
+            let (data, response) = (reply.data, reply.response)
             guard let httpResponse = response as? HTTPURLResponse else {
                 return .failed
             }

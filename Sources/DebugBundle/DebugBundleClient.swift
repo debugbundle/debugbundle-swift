@@ -1,32 +1,34 @@
 import Foundation
 public final class DebugBundleClient {
-    private let config: DebugBundleConfig
+    let evidence: DebugBundleEvidenceController
+    let config: DebugBundleConfig
     private let transport: DebugBundleTransporting
     private let queueStore: DebugBundleQueueStoring
     private let remoteConfigClient: DebugBundleRemoteConfigClienting
     private let connectivityMonitor: DebugBundleConnectivityMonitoring?
-    private let clock: () -> Date
+    let clock: () -> Date
     private let sleep: @Sendable (TimeInterval) async -> Void
     private let random: () -> Double
     private let deviceContextProvider: () -> DebugBundleDeviceContext
-    private let redactor: DebugBundleRedactor
+    let redactor: DebugBundleRedactor
     private let suppressionTracker = DebugBundleSuppressionTracker()
-    private let remoteProbeState = DebugBundleRemoteProbeState()
-    private let lock = NSLock()
-    private var persistentContext: [String: Any?] = [:]
+    let remoteProbeState = DebugBundleRemoteProbeState()
+    let lock = NSLock()
+    var persistentContext: [String: Any?] = [:]
     private var delivery: DebugBundleDeliveryQueue!
     private var currentBatch: DebugBundleDeliveryQueue.Batch?
     private var flushSignal: DebugBundleCompletion?
     private var configSignal: DebugBundleCompletion?
     private var automaticFlushScheduled = false
-    private var breadcrumbs: [DebugBundleBreadcrumb] = []
-    private var probes: [String: [JSONValue]] = [:]
-    private var capturePolicy = DebugBundleCapturePolicy.defaultWhenConfigFetchFails()
+    var breadcrumbs: [DebugBundleBreadcrumb] = []
+    var probes: [String: [JSONValue]] = [:]
+    var capturePolicy = DebugBundleCapturePolicy.defaultWhenConfigFetchFails()
+    private var capturePolicyKnown = false
     private var remoteConfigETag: String?
     private var lastRemoteConfigRefreshAt: Date?
     private var remoteConfigRefreshInterval: TimeInterval = 30
     private var remoteConfigRefreshInFlight = false
-    private var lastScreenName: String?
+    var lastScreenName: String?
     private var statusValue: DebugBundleStatus
     private var lastEventValue: Date?
     private var latestInternalDiagnosticValue: DebugBundleInternalDiagnostic?
@@ -34,8 +36,8 @@ public final class DebugBundleClient {
     private var retryAttemptCount = 0
     private var sessionEventCount = 0
     private var sessionSampledIn: Bool
-    private var clearBreadcrumbsOnNextSuccess = false
-    private var clearProbesOnNextSuccess = false
+    var clearBreadcrumbsOnNextSuccess = false
+    var clearProbesOnNextSuccess = false
     private var periodicFlushTask: Task<Void, Never>?
     public init(
         config: DebugBundleConfig,
@@ -48,6 +50,7 @@ public final class DebugBundleClient {
         random: @escaping () -> Double = { Double.random(in: 0...1) },
         deviceContextProvider: (() -> DebugBundleDeviceContext)? = nil
     ) {
+        self.evidence = DebugBundleEvidenceController(config.evidenceOptions)
         self.config = config
         self.transport = transport ?? DebugBundleHTTPTransport()
         self.queueStore = queueStore ?? DebugBundleFileQueueStore(
@@ -80,15 +83,21 @@ public final class DebugBundleClient {
         self.statusValue = config.enabled && !config.projectToken.isEmpty ? .healthy : .disconnected
         self.sessionSampledIn = config.enabled && !config.projectToken.isEmpty && (config.sessionSampleRate >= 1 || random() <= config.sessionSampleRate)
         let activeRedactor = self.redactor
+        let activeEvidence = self.evidence
         (self.queueStore as? DebugBundleFileQueueStore)?.installPrivacyTransformer {
             protectDebugBundleEvent($0, redactor: activeRedactor)
         }
         self.delivery = DebugBundleDeliveryQueue(
             config: config, store: self.queueStore, clock: clock,
             protect: { protectDebugBundleEvent($0, redactor: activeRedactor) },
-            prepare: { [weak self] in self?.prepareOnWorker($0, capturedAt: $1, deferredError: $2, needsDeviceContext: $3) },
+            prepare: { [weak self] in self?.prepareOnWorker($0, capturedAt: $1, deferredError: $2, needsDeviceContext: $3, runBeforeSend: $4) },
             pressureEvent: { [weak self] in self?.makePressureEvent($0) },
-            onReady: { [weak self] in self?.scheduleAutomaticFlush() }
+            onReady: { [weak self] in self?.scheduleAutomaticFlush() },
+            onPrepared: { activeEvidence.prepared($0) },
+            onDropped: { if $0.eventType == "diagnostic_context" { activeEvidence.budget.release($0.eventId) } },
+            onRestored: { activeEvidence.budget.restore($0) },
+            retainRestored: { $0.eventType != "diagnostic_context" || activeEvidence.canHold($0) },
+            onPersisted: { activeEvidence.budget.synchronize($0) }
         )
         self.delivery.start()
         self.connectivityMonitor?.setUpdateHandler { [weak self] status in
@@ -101,9 +110,12 @@ public final class DebugBundleClient {
     }
 
     deinit {
+        evidence.close()
         periodicFlushTask?.cancel()
         connectivityMonitor?.setUpdateHandler(nil)
     }
+
+    public var evidenceCapabilities: DebugBundleEvidenceCapabilities { evidence.capabilities(lock.withLock { capturePolicy.diagnosticsAllowed }) }
 
     public var status: DebugBundleStatus {
         lock.withLock { statusValue }
@@ -182,11 +194,20 @@ public final class DebugBundleClient {
             )
         )
 
+        if transport is DebugBundleHTTPTransport, remoteConfigClient is DebugBundleHTTPRemoteConfigClient,
+           DebugBundleEvidenceController.matchingConfigPath(config.endpoint) {
+            switch result {
+            case let .loaded(response, _): evidence.observe(response.evidenceCapabilities)
+            case .failed: evidence.observe(nil)
+            case .notModified: break
+            }
+        }
         switch result {
         case let .loaded(configResponse, eTag):
             lock.withLock {
                 remoteConfigETag = eTag
                 capturePolicy = DebugBundleCapturePolicy.fromRemotePolicy(configResponse.capturePolicy)
+                capturePolicyKnown = true
                 lastRemoteConfigRefreshAt = now
                 remoteConfigRefreshInterval = debugBundleRemoteConfigRefreshInterval(configResponse.pollIntervalMillis)
                 remoteConfigRefreshInFlight = false
@@ -225,306 +246,6 @@ public final class DebugBundleClient {
         return true
     }
 
-    public func captureException(_ error: Error, context: [String: Any?] = [:]) {
-        guard canAdmit(priority: 3, countTowardSession: false) else { return }
-        let mergedContext = mergedContext(context)
-        let snapshot = lock.withLock { () -> (breadcrumbs: [JSONValue], probes: [String: JSONValue]) in
-            clearBreadcrumbsOnNextSuccess = true
-            if config.probeFlushOnError {
-                clearProbesOnNextSuccess = true
-            }
-            let breadcrumbPayload = breadcrumbs.map { JSONValue.object($0.payload) }
-            let probePayload = probes.reduce(into: [String: JSONValue]()) { result, entry in
-                result[entry.key] = .array(entry.value)
-            }
-            return (breadcrumbPayload, probePayload)
-        }
-        let payload: [String: JSONValue] = [
-            "error": redactor.sanitizeJSON(.object(debugBundleSafeErrorPayload(error))),
-            "stack": .string(Thread.callStackSymbols.joined(separator: "\n")),
-            "context": .object(redactor.sanitizeDictionary(mergedContext)),
-            "breadcrumbs": .array(snapshot.breadcrumbs),
-            "probe_data": .object(snapshot.probes)
-        ]
-
-        enqueue(
-            eventType: DebugBundleEventType.frontendException,
-            payload: payload,
-            traceId: debugBundleStringValue(from: mergedContext["trace_id"]),
-            deferredError: DebugBundleDeferredError(error)
-        )
-    }
-
-    public func captureError(_ error: Error, context: [String: Any?] = [:]) {
-        captureException(error, context: context)
-    }
-
-    public func captureLog(_ message: String, level: DebugBundleLogLevel = .warning, context: [String: Any?] = [:]) {
-        guard config.enabled, !config.projectToken.isEmpty else { return }
-        let eligible = lock.withLock {
-            capturePolicy.capturesLog(level, localEnabled: config.captureLogs, localThreshold: config.logLevel)
-        }
-        guard eligible, canAdmit(priority: level == .error || level == .critical ? 2 : 0) else { return }
-        let mergedContext = mergedContext(context)
-        let payload: [String: JSONValue] = [
-            "level": .string(String(describing: level).lowercased()),
-            "message": .string(message),
-            "logged_at": .string(debugBundleTimestamp(clock())),
-            "context": .object(redactor.sanitizeDictionary(mergedContext))
-        ]
-        enqueue(
-            eventType: DebugBundleEventType.logEvent,
-            payload: payload,
-            traceId: debugBundleStringValue(from: mergedContext["trace_id"])
-        )
-    }
-
-    public func captureRequest(_ request: DebugBundleRequestInfo, response: DebugBundleResponseInfo, context: [String: Any?] = [:]) {
-        if config.captureNetwork {
-            recordBreadcrumb(
-                breadcrumbType: "network_request",
-                route: request.routeTemplate,
-                data: [
-                    "method": request.method,
-                    "url": request.url,
-                    "status_code": response.statusCode,
-                    "duration_ms": response.durationMillis as Any,
-                    "trace_id": request.traceId as Any
-                ]
-            )
-        }
-
-        guard canAdmit(priority: response.statusCode >= 400 ? 2 : 1) else { return }
-        let mergedContext = mergedContext(context)
-        let payload: [String: JSONValue] = [
-            "method": .string(request.method),
-            "url": .string(request.url),
-            "route_template": request.routeTemplate.map(JSONValue.string) ?? .null,
-            "status_code": .number(Double(response.statusCode)),
-            "duration_ms": response.durationMillis.map { .number(Double($0)) } ?? .null,
-            "headers": .object(redactor.filterHeaders(request.headers, allowlist: config.headerAllowlist)),
-            "response_headers": .object(redactor.filterHeaders(response.headers, allowlist: config.headerAllowlist)),
-            "context": .object(redactor.sanitizeDictionary(mergedContext))
-        ]
-
-        let traceId = request.traceId ?? debugBundleStringValue(from: mergedContext["trace_id"])
-        enqueue(
-            eventType: DebugBundleEventType.requestEvent,
-            payload: payload,
-            traceId: traceId
-        )
-    }
-
-    public func captureMessage(_ message: String, level: DebugBundleLogLevel = .warning, context: [String: Any?] = [:]) {
-        captureLog(message, level: level, context: context)
-    }
-
-    public func setContext(_ key: String, value: Any?) {
-        guard key.utf8.prefix(129).count <= 128 else { return }
-        let safe = redactor.sanitizeDictionary([key: value])
-        lock.withLock {
-            guard persistentContext[key] != nil || persistentContext.count < 50 else { return }
-            persistentContext[key] = safe[key]
-        }
-    }
-
-    public func probe(_ label: String, data: Any?, options: ProbeOptions = ProbeOptions()) {
-        probe(label, options: options) { data }
-    }
-
-    public func probe(_ label: String, options: ProbeOptions = ProbeOptions(), producer: () -> Any?) {
-        guard !label.isEmpty, redactor.sanitize(label) == .string(label), remoteProbeState.probesAreEnabled() else {
-            return
-        }
-        let matchingDirectives = remoteProbeState.matchingDirectives(
-            label: label,
-            service: config.service,
-            environment: config.environment,
-            now: clock()
-        )
-        guard !options.heavy || !matchingDirectives.isEmpty else {
-            return
-        }
-        let value = redactor.sanitize(producer())
-        lock.withLock {
-            if probes[label] == nil, probes.count >= config.maxProbeLabels {
-                return
-            }
-            var entries = probes[label] ?? []
-            entries.append(value)
-            if entries.count > config.maxProbeEntriesPerLabel {
-                entries.removeFirst(entries.count - config.maxProbeEntriesPerLabel)
-            }
-            probes[label] = entries
-        }
-
-        guard !matchingDirectives.isEmpty else {
-            return
-        }
-
-        for directive in matchingDirectives {
-            let payload: [String: JSONValue] = [
-                "label": .string(label),
-                "data": value,
-                "activation_id": .string(directive.effectiveActivationId),
-                "probe_label_pattern": .string(directive.labelPattern)
-            ]
-            enqueue(
-                eventType: DebugBundleEventType.probeEvent,
-                payload: payload,
-                traceId: nil
-            )
-        }
-    }
-
-    /**
-     Additive bridge surface for a canonical event authored by another
-     DebugBundle SDK, currently React Native.
-     */
-    public func captureExternalEvent(_ event: [String: Any?]) -> Bool {
-        guard config.enabled, !config.projectToken.isEmpty else {
-            return false
-        }
-        let sanitized = redactor.sanitizeDictionary(event)
-        guard let envelope = parseDebugBundleExternalEvent(
-            sanitized,
-            fallbackDevice: captureDevicePlaceholder
-        ) else {
-            return false
-        }
-        return capturePreparedEnvelope(envelope, needsDeviceContext:
-            sanitized["device"] == nil && sanitized["payload"]?.objectValue?["device"] == nil)
-    }
-
-    public func isExternalProbeActive(_ label: String) -> Bool {
-        !label.isEmpty
-            && remoteProbeState.probesAreEnabled()
-            && !remoteProbeState.matchingDirectives(
-                label: label,
-                service: config.service,
-                environment: config.environment,
-                now: clock()
-            ).isEmpty
-    }
-
-    public func captureExternalProbe(
-        sdkVersion: String,
-        service: String,
-        environment: String,
-        label: String,
-        data: Any?,
-        occurredAt: String
-    ) -> Bool {
-        guard isExternalProbeActive(label) else {
-            return false
-        }
-        let directives = remoteProbeState.matchingDirectives(
-            label: label,
-            service: service,
-            environment: environment,
-            now: clock()
-        )
-        let events = makeDebugBundleExternalProbeEvents(
-            directives: directives,
-            sdkVersion: sdkVersion.isEmpty ? config.sdkVersion : sdkVersion,
-            service: service.isEmpty ? config.service : service,
-            environment: environment.isEmpty ? config.environment : environment,
-            label: label,
-            data: redactor.sanitize(data),
-            occurredAt: debugBundleParseTimestamp(occurredAt) == nil
-                ? ISO8601DateFormatter().string(from: clock())
-                : occurredAt,
-            device: captureDevicePlaceholder
-        )
-        return events.reduce(false) { captured, event in
-            capturePreparedEnvelope(event) || captured
-        }
-    }
-
-    public func recordBreadcrumb(breadcrumbType: String, route: String? = nil, data: [String: Any?] = [:]) {
-        let sanitizedData = redactor.sanitizeDictionary(data)
-        guard case let .string(safeType) = redactor.sanitize(breadcrumbType) else { return }
-        let safeRoute = route.flatMap { value -> String? in
-            guard case let .string(cleaned) = redactor.sanitize(value) else { return nil }
-            return cleaned
-        }
-        let breadcrumb = lock.withLock { () -> DebugBundleBreadcrumb? in
-            guard shouldCapture(countTowardSession: true) else {
-                return nil
-            }
-            let breadcrumb = DebugBundleBreadcrumb(
-                occurredAt: debugBundleTimestamp(clock()),
-                breadcrumbType: safeType,
-                route: safeRoute,
-                data: sanitizedData
-            )
-            breadcrumbs.append(breadcrumb)
-            if breadcrumbs.count > config.maxBreadcrumbs {
-                breadcrumbs.removeFirst(breadcrumbs.count - config.maxBreadcrumbs)
-            }
-            return breadcrumb
-        }
-        guard let breadcrumb else {
-            return
-        }
-        enqueue(
-            eventType: DebugBundleEventType.frontendBreadcrumb,
-            payload: breadcrumb.payload,
-            traceId: nil
-        )
-    }
-
-    public func recordScreen(_ screenName: String, previousScreen: String? = nil, source: String = "manual") {
-        guard config.captureScreens else {
-            return
-        }
-        let resolvedPreviousScreen = previousScreen ?? lock.withLock { lastScreenName }
-        lock.withLock {
-            lastScreenName = screenName
-        }
-        recordBreadcrumb(
-            breadcrumbType: "screen_transition",
-            route: screenName,
-            data: [
-                "previous_screen": resolvedPreviousScreen as Any,
-                "source": source
-            ]
-        )
-    }
-
-    public func recordAppForeground() {
-        recordBreadcrumb(
-            breadcrumbType: "app_foreground",
-            route: lock.withLock { lastScreenName },
-            data: [:]
-        )
-        _ = scheduleRemoteConfig(force: false)
-    }
-
-    public func recordAppBackground() {
-        recordBreadcrumb(
-            breadcrumbType: "app_background",
-            route: lock.withLock { lastScreenName },
-            data: [:]
-        )
-        scheduleAutomaticFlush(force: true)
-    }
-
-    public func recordAction(_ actionType: String, targetType: String, resourceName: String? = nil) {
-        guard config.captureActions else {
-            return
-        }
-        recordBreadcrumb(
-            breadcrumbType: "user_action",
-            route: lock.withLock { lastScreenName },
-            data: [
-                "action_type": actionType,
-                "target_type": targetType,
-                "resource_name": resourceName as Any
-            ]
-        )
-    }
-
     private var flushTimeout: TimeInterval { min(max(config.requestTimeout, 0.001), 60) }
 
     public func flush() async {
@@ -541,22 +262,24 @@ public final class DebugBundleClient {
                 statusValue = .degraded
                 return nil
             }
-            guard let batch = delivery.takeBatch() else { return nil }
+            guard let batch = delivery.takeBatch(includeDiagnostics: capturePolicyKnown) else { return nil }
             let signal = DebugBundleCompletion()
             currentBatch = batch
+            delivery.retainSnapshot(batch)
             flushSignal = signal
             // Only one sender owns a snapshot, even after a caller's deadline expires.
             Task { [self] in
                 do {
-                    let result = try await transport.send(events: batch.events, config: config)
-                    handleTransportResult(result, sentEvents: batch.events)
+                    try await sendOwnedBatch(batch, deadline: deadline)
                 } catch {
+                    if transport is DebugBundleHTTPTransport { evidence.observe(nil) }
                     lock.withLock {
                         retainCurrentBatchLocked()
                         statusValue = .degraded
                         scheduleRetryLocked(retryAfter: nil, now: clock())
                     }
                 }
+                delivery.releaseSnapshot(batch)
                 lock.withLock { flushSignal = nil }
                 signal.finish()
             }
@@ -574,7 +297,55 @@ public final class DebugBundleClient {
         _ = await delivery.waitUntilIdle(timeout: flushTimeout)
     }
 
-    private func scheduleAutomaticFlush(force: Bool = false) {
+    private func finalizeBatch(_ batch: DebugBundleDeliveryQueue.Batch, native: Bool) -> DebugBundleDeliveryQueue.Batch? {
+        delivery.refineBatch(batch) { original in
+            guard let safe = protectDebugBundleEvent(original, redactor: redactor) else { return nil }
+            let policy = lock.withLock { capturePolicy }
+            guard let filtered = evidence.filter(safe, diagnosticsAllowed: policy.diagnosticsAllowed),
+                  shouldCaptureDebugBundleExternalEnvelope(config: config, policy: policy, event: filtered) else { return nil }
+            return native ? DebugBundleIngestionWire.fit(filtered) : filtered
+        }
+    }
+
+    private func sendOwnedBatch(_ batch: DebugBundleDeliveryQueue.Batch, deadline: TimeInterval) async throws {
+        guard transport is DebugBundleHTTPTransport else {
+            let active = finalizeBatch(batch, native: false)
+            lock.withLock { currentBatch = active }
+            if let active { handleTransportResult(try await transport.send(events: active.events, config: config), sentEvents: active.events) }
+            return
+        }
+        var remaining: DebugBundleDeliveryQueue.Batch? = batch
+        // Unsent tails retain their leases/bytes through every native call and are requeued on exit.
+        defer { if let remaining { delivery.finishBatch(remaining, retryableIndices: Set(remaining.events.indices)) } }
+        while let candidate = remaining {
+            guard ProcessInfo.processInfo.systemUptime < deadline else {
+                lock.withLock { currentBatch = nil }
+                return
+            }
+            let active = finalizeBatch(candidate, native: true)
+            remaining = nil
+            lock.withLock { currentBatch = active }
+            guard let active else { return }
+            let count = DebugBundleIngestionWire.prefixCount(active.events)
+            guard count > 0 else { throw URLError(.dataLengthExceedsMaximum) }
+            let sending = DebugBundleDeliveryQueue.Batch(ids: Array(active.ids.prefix(count)), events: Array(active.events.prefix(count)))
+            if count < active.events.count {
+                remaining = DebugBundleDeliveryQueue.Batch(ids: Array(active.ids.dropFirst(count)), events: Array(active.events.dropFirst(count)))
+            }
+            lock.withLock { currentBatch = sending }
+            let duration = deadline - ProcessInfo.processInfo.systemUptime
+            guard duration > 0 else { lock.withLock { retainCurrentBatchLocked() }; return }
+            var attemptConfig = config
+            attemptConfig.requestTimeout = duration
+            let result = try await transport.send(events: sending.events, config: attemptConfig)
+            handleTransportResult(result, sentEvents: sending.events)
+            guard (200..<300).contains(result.statusCode),
+                  case let .accounted(accepted, _, retryable, _) = decideDebugBundleAcknowledgement(result: result, events: sending.events),
+                  accepted == sending.events.count, retryable.isEmpty else { return }
+        }
+    }
+
+    func scheduleAutomaticFlush(force: Bool = false) {
         guard force || delivery.readyCount >= config.batchSize else { return }
         let start = lock.withLock { () -> Bool in
             guard !automaticFlushScheduled, flushSignal == nil else { return false }
@@ -590,7 +361,7 @@ public final class DebugBundleClient {
         }
     }
 
-    private func scheduleRemoteConfig(force: Bool) -> DebugBundleCompletion {
+    func scheduleRemoteConfig(force: Bool) -> DebugBundleCompletion {
         lock.withLock {
             if let configSignal { return configSignal }
             let signal = DebugBundleCompletion()
@@ -605,13 +376,13 @@ public final class DebugBundleClient {
         }
     }
 
-    private func canAdmit(priority: Int, countTowardSession: Bool = true) -> Bool {
+    func canAdmit(priority: Int, countTowardSession: Bool = true) -> Bool {
         guard config.enabled, !config.projectToken.isEmpty,
-              lock.withLock({ sessionSampledIn && shouldCapture(countTowardSession: countTowardSession) }) else { return false }
+              lock.withLock({ (priority == 3 || sessionSampledIn) && shouldCapture(countTowardSession: countTowardSession) }) else { return false }
         return delivery.canAdmit(priority: priority)
     }
 
-    private func enqueue(
+    func enqueue(
         eventType: String,
         payload: [String: JSONValue],
         traceId: String?,
@@ -628,52 +399,70 @@ public final class DebugBundleClient {
         )
     }
 
-    private func capturePreparedEnvelope(_ authoredEvent: DebugBundleEventEnvelope, deferredError: DebugBundleDeferredError? = nil, needsDeviceContext: Bool = true) -> Bool {
+    func capturePreparedEnvelope(_ authoredEvent: DebugBundleEventEnvelope, deferredError: DebugBundleDeferredError? = nil, needsDeviceContext: Bool = true, runBeforeSend: Bool = true, onRetained: (() -> Void)? = nil) -> Bool {
         guard config.enabled, !config.projectToken.isEmpty,
               delivery.canAdmit(priority: DebugBundleDeliveryQueue.priority(authoredEvent)),
               let safe = protectDebugBundleEvent(authoredEvent, redactor: redactor) else { return false }
         // Retain only a bounded, privacy-safe value. Hooks never run on the caller.
         guard allowsFinalEvent(safe) else { return false }
-        return delivery.admit(safe, deferredError: deferredError, needsDeviceContext: needsDeviceContext)
+        if safe.eventType == "diagnostic_context" {
+            guard isValidBeforeSendEvent(safe), evidence.budget.reserve(safe) else { return false }
+        }
+        return delivery.admit(safe, deferredError: deferredError, needsDeviceContext: needsDeviceContext, runBeforeSend: runBeforeSend, onRetained: onRetained)
     }
 
     private func prepareOnWorker(_ captured: DebugBundleEventEnvelope, capturedAt: Date,
-        deferredError: DebugBundleDeferredError?, needsDeviceContext: Bool) -> DebugBundleEventEnvelope? {
+        deferredError: DebugBundleDeferredError?, needsDeviceContext: Bool, runBeforeSend: Bool) -> DebugBundleEventEnvelope? {
+        func finish(_ candidate: DebugBundleEventEnvelope?) -> DebugBundleEventEnvelope? {
+            let final = evidence.reconcile(captured, candidate, diagnosticsAllowed: lock.withLock { capturePolicy.diagnosticsAllowed })
+            if let final, debugBundleExternalEventCountsTowardSession(final.eventType) { lock.withLock { sessionEventCount += 1 } }
+            return final
+        }
         var enriched = captured
+        let wasCanonical = isValidBeforeSendEvent(enriched)
         let device = needsDeviceContext ? deviceContextProvider() : captured.device
         if needsDeviceContext {
             enriched.device = device
-            enriched.payload.removeValue(forKey: "device")
+            if wasCanonical && debugBundleMobileEventUsesDevice(enriched.eventType) {
+                enriched.payload["device"] = .object(canonicalSwiftDevice(device, payload: [:]))
+            } else {
+                enriched.payload.removeValue(forKey: "device")
+            }
         }
         if let message = deferredError?.workerMessage() { enriched.payload["message"] = redactor.sanitize(message) }
-        enriched.payload = canonicalizeSwiftEvent(eventType: enriched.eventType, payload: enriched.payload,
-            device: device, occurredAt: enriched.occurredAt).payload
+        if !isValidBeforeSendEvent(enriched) {
+            enriched.payload = canonicalizeSwiftEvent(eventType: enriched.eventType, payload: enriched.payload,
+                device: device, occurredAt: enriched.occurredAt).payload
+        }
+        if evidence.canCaptureExceptions, let deferredError {
+            enriched.payload["exception_evidence"] = deferredError.workerEvidence(
+                name: enriched.payload["name"]?.stringValue ?? "Error",
+                message: enriched.payload["message"]?.stringValue ?? "Unavailable",
+                stack: enriched.payload["stack"]?.stringValue ?? "", redactor: redactor, context: enriched.context)
+        }
         guard let beforeHook = protectDebugBundleEvent(enriched, redactor: redactor),
-              let hooked = applyDebugBundleBeforeSend(beforeHook, hook: config.beforeSend),
-              let event = protectDebugBundleEvent(hooked, redactor: redactor),
-              allowsFinalEvent(event), random() <= config.sampleRate else { return nil }
-        let now = capturedAt
+              let hooked = applyDebugBundleBeforeSend(beforeHook, hook: runBeforeSend ? config.beforeSend : nil),
+              let event = protectDebugBundleEvent(hooked, redactor: redactor), (!wasCanonical || isValidBeforeSendEvent(event)),
+              allowsFinalEvent(event), random() <= config.sampleRate else { return finish(nil) }
+        if event.eventType == "diagnostic_context" || !runBeforeSend { return finish(event) }
         let fingerprint = debugBundleFingerprint(eventType: event.eventType, payload: event.payload)
-        switch suppressionTracker.register(fingerprint: fingerprint, now: now).action {
-        case .allow:
-            if debugBundleExternalEventCountsTowardSession(event.eventType) {
-                lock.withLock { sessionEventCount += 1 }
-            }
-            return event
+        switch suppressionTracker.register(fingerprint: fingerprint, now: capturedAt).action {
+        case .allow: return finish(event)
         case let .suppress(suppressedCount, windowSeconds):
-            guard suppressedCount > 0 else { return nil }
+            guard suppressedCount > 0 else { return finish(nil) }
             let aggregate = makeDebugBundleExternalSuppressionEvent(source: event, fingerprint: fingerprint,
-                suppressedCount: suppressedCount, windowSeconds: windowSeconds, occurredAt: debugBundleTimestamp(now))
+                suppressedCount: suppressedCount, windowSeconds: windowSeconds, occurredAt: debugBundleTimestamp(capturedAt))
             guard let safe = protectDebugBundleEvent(aggregate, redactor: redactor),
-                  let hooked = applyDebugBundleBeforeSend(safe, hook: config.beforeSend),
-                  let final = protectDebugBundleEvent(hooked, redactor: redactor), allowsFinalEvent(final) else { return nil }
-            return final
+                  let hooked = applyDebugBundleBeforeSend(safe, hook: runBeforeSend ? config.beforeSend : nil),
+                  let final = protectDebugBundleEvent(hooked, redactor: redactor), allowsFinalEvent(final) else { return finish(nil) }
+            return finish(final)
         }
     }
 
     private func allowsFinalEvent(_ event: DebugBundleEventEnvelope) -> Bool {
         lock.withLock {
-            sessionSampledIn && shouldCapture(countTowardSession: debugBundleExternalEventCountsTowardSession(event.eventType))
+            (debugBundleIsException(event.eventType) || event.eventType == DebugBundleEventType.errorSuppressed || sessionSampledIn)
+                && shouldCapture(countTowardSession: debugBundleExternalEventCountsTowardSession(event.eventType))
                 && shouldCaptureDebugBundleExternalEnvelope(config: config, policy: capturePolicy, event: event)
         }
     }
@@ -687,11 +476,11 @@ public final class DebugBundleClient {
         return protectDebugBundleEvent(event, redactor: redactor)
     }
 
-    private var captureDevicePlaceholder: DebugBundleDeviceContext {
+    var captureDevicePlaceholder: DebugBundleDeviceContext {
         DebugBundleDeviceContext(appVersion: config.appVersion, buildNumber: config.buildNumber, releaseChannel: config.releaseChannel)
     }
 
-    private func makeEnvelope(
+    func makeEnvelope(
         eventType: String,
         payload: [String: JSONValue],
         traceId: String?,
@@ -727,6 +516,18 @@ public final class DebugBundleClient {
         sentEvents: [DebugBundleEventEnvelope]
     ) {
         let now = clock()
+        if transport is DebugBundleHTTPTransport {
+            let complete: Bool
+            if case .protocolFailure = decideDebugBundleAcknowledgement(result: result, events: sentEvents) { complete = false }
+            else { complete = (200 ..< 300).contains(result.statusCode) }
+            evidence.observe(complete ? result.evidenceCapabilities : nil)
+        }
+        if (200..<300).contains(result.statusCode),
+           case let .accounted(_, rejectedErrors, _, _) = decideDebugBundleAcknowledgement(result: result, events: sentEvents),
+           let batch = lock.withLock({ currentBatch }) {
+            let rejected = Set(rejectedErrors.map(\.index))
+            delivery.acknowledgeRetained(batch, acceptedIndices: Set(sentEvents.indices).subtracting(rejected))
+        }
         lock.withLock {
             if (200 ..< 300).contains(result.statusCode) {
                 handleSuccessfulTransportResultLocked(result, sentEvents: sentEvents, now: now)
@@ -773,22 +574,24 @@ public final class DebugBundleClient {
             retainCurrentBatchLocked()
 
         case .legacyTransportSuccess:
+            let ownsContext = currentBatch.map { delivery.acceptedCurrentContext($0, acceptedIndices: Set(sentEvents.indices)) } ?? false
             reconcileSentEventsLocked(sentEvents)
             recordSuccessfulDeliveryLocked(
                 accepted: sentEvents.count,
-                acceptedFrontendException: sentEvents.contains {
-                    $0.eventType == DebugBundleEventType.frontendException
-                },
+                acceptedFrontendException: ownsContext,
                 probeDirectives: result.probeDirectives
             )
 
         case let .accounted(accepted, rejectedErrors, retryableIndices, acceptedFrontendException):
-            reconcileSentEventsLocked(sentEvents, retryableIndices: retryableIndices)
+            let acceptedIndices = Set(sentEvents.indices).subtracting(rejectedErrors.map(\.index))
+            let ownsContext = acceptedFrontendException && (currentBatch.map { delivery.acceptedCurrentContext($0, acceptedIndices: acceptedIndices) } ?? false)
+            let retainedIndices = retryableIndices.union(compatibleRejectionsLocked(rejectedErrors, sentEvents: sentEvents))
+            reconcileSentEventsLocked(sentEvents, retryableIndices: retainedIndices)
             remoteProbeState.applyPiggybackDirectives(result.probeDirectives, now: now)
             if accepted > 0 {
                 lastEventValue = now
             }
-            let terminalErrors = rejectedErrors.filter { !retryableIndices.contains($0.index) }
+            let terminalErrors = rejectedErrors.filter { !retainedIndices.contains($0.index) }
             if !terminalErrors.isEmpty {
                 latestInternalDiagnosticValue = DebugBundleInternalDiagnostic(
                     category: "ingestion_event_rejected",
@@ -802,10 +605,10 @@ public final class DebugBundleClient {
             } else {
                 latestInternalDiagnosticValue = nil
             }
-            if acceptedFrontendException {
+            if ownsContext {
                 clearDeliveredExceptionContextLocked()
             }
-            if retryableIndices.isEmpty {
+            if retainedIndices.isEmpty {
                 statusValue = accepted > 0 ? .healthy : .disconnected
                 nextFlushAllowedAt = nil
                 retryAttemptCount = 0
@@ -814,6 +617,22 @@ public final class DebugBundleClient {
                 scheduleRetryLocked(retryAfter: result.retryAfter, now: now)
             }
         }
+    }
+
+    private func compatibleRejectionsLocked(_ errors: [DebugBundleIngestionError], sentEvents: [DebugBundleEventEnvelope]) -> Set<Int> {
+        guard transport is DebugBundleHTTPTransport, let batch = currentBatch else { return [] }
+        var replacements: [Int: DebugBundleEventEnvelope] = [:]
+        for error in errors where error.reason == "invalid_event" {
+            let event = sentEvents[error.index]
+            guard debugBundleIsException(event.eventType),
+                  evidence.filter(event, diagnosticsAllowed: capturePolicy.diagnosticsAllowed, owned: false) != event else { continue }
+            let compatible = DebugBundleIngestionWire.withoutEvidence(event)
+            if compatible != event, isValidBeforeSendEvent(compatible) { replacements[error.index] = compatible }
+        }
+        guard !replacements.isEmpty else { return [] }
+        let (rewritten, indices) = delivery.rewriteForRetry(batch, replacements: replacements)
+        currentBatch = rewritten
+        return indices
     }
 
     private func reconcileSentEventsLocked(
@@ -868,14 +687,14 @@ public final class DebugBundleClient {
         nextFlushAllowedAt = now.addingTimeInterval(boundedDelay)
     }
 
-    private func shouldCapture(countTowardSession: Bool) -> Bool {
+    func shouldCapture(countTowardSession: Bool) -> Bool {
         if !countTowardSession {
             return true
         }
         return sessionEventCount < config.maxEventsPerSession
     }
 
-    private func mergedContext(_ context: [String: Any?]) -> [String: Any?] {
+    func mergedContext(_ context: [String: Any?]) -> [String: Any?] {
         guard context.count <= 50 else { return ["_redacted": "[REDACTED]"] }
         return lock.withLock {
             persistentContext.merging(context) { _, new in new }

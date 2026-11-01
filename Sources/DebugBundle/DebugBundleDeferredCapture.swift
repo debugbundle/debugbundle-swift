@@ -3,13 +3,21 @@ import Foundation
 /// Only a weak reference crosses admission. Value errors never retain an arbitrary raw graph.
 final class DebugBundleDeferredError {
     private weak var reference: AnyObject?
-    init?(_ error: Error) {
-        guard type(of: error) is AnyClass, type(of: error) != NSError.self else { return nil }
-        reference = error as AnyObject
+    private var runtime: DebugBundleRuntimeReport?
+    private let unavailableReason: String
+    init(_ error: Error) {
+        unavailableReason = type(of: error) is AnyClass ? "unknown" : "unsupported"
+        if type(of: error) is AnyClass { reference = error as AnyObject }
+    }
+    init(runtime: DebugBundleRuntimeReport) { self.runtime = runtime; unavailableReason = "unknown" }
+    func workerEvidence(name: String, message: String, stack: String, redactor: DebugBundleRedactor, context: [String: JSONValue]? = nil) -> JSONValue? {
+        if let runtime { return DebugBundleFatalEvidence.capture(runtime, context: context, redactor: redactor) }
+        return DebugBundleExceptionEvidence.capture(error: reference as? Error, name: name, message: message, stack: stack,
+            unavailableReason: unavailableReason, redactor: redactor)
     }
 
     func workerMessage() -> String? {
-        guard let error = reference as? Error else { return nil }
+        guard let error = reference as? Error, type(of: error) != NSError.self else { return nil }
         // Custom reference accessors run only on the existing bounded worker.
         return (error as NSError).localizedDescription
     }
@@ -47,7 +55,8 @@ func debugBundleIsSafeFoundationValue(_ value: Any) -> Bool {
 }
 
 private let safeFoundationClasses: Set<String> = [
-    "NSString", "NSMutableString", "NSTaggedPointerString", "NSConstantString", "__NSCFConstantString", "__NSCFString",
+    "NSString", "NSMutableString", "NSTaggedPointerString", "NSIndirectTaggedPointerString", "NSConstantString", "__NSCFConstantString", "__NSCFString",
+    "Swift.__SharedStringStorage", "Swift.__StringStorage",
     "NSNumber", "__NSCFNumber", "__NSCFBoolean", "NSDecimalNumber",
     "NSDate", "__NSDate", "__NSTaggedDate", "__NSCFDate", "NSURL", "__NSCFURL", "NSNull",
     "NSDictionary", "NSMutableDictionary", "__NSDictionaryI", "__NSDictionaryM", "__NSDictionary0",

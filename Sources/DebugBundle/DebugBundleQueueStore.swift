@@ -7,7 +7,13 @@ public protocol DebugBundleQueueStoring {
     func persist(_ events: [DebugBundleEventEnvelope])
 }
 
-public final class DebugBundleFileQueueStore: DebugBundleQueueStoring {
+/// Optional retained-handoff proof. Return true only after the configured store has retained every supplied event.
+/// Existing custom stores keep their unchanged Void persistence contract.
+public protocol DebugBundleAcknowledgingQueueStore: DebugBundleQueueStoring {
+    func persistAcknowledging(_ events: [DebugBundleEventEnvelope]) -> Bool
+}
+
+public final class DebugBundleFileQueueStore: DebugBundleAcknowledgingQueueStore {
     private let fileURL: URL
     private let fileProtection: DebugBundleFileProtection
     private let lock = NSLock()
@@ -68,7 +74,9 @@ public final class DebugBundleFileQueueStore: DebugBundleQueueStoring {
         }
     }
 
-    public func persist(_ events: [DebugBundleEventEnvelope]) {
+    public func persist(_ events: [DebugBundleEventEnvelope]) { _ = persistAcknowledging(events) }
+
+    public func persistAcknowledging(_ events: [DebugBundleEventEnvelope]) -> Bool {
         lock.withLock {
             do {
                 let directoryURL = fileURL.deletingLastPathComponent()
@@ -76,8 +84,9 @@ public final class DebugBundleFileQueueStore: DebugBundleQueueStoring {
                 let data = try encoder.encode(events)
                 try data.write(to: fileURL, options: .atomic)
                 applyFileProtectionIfNeeded()
+                return true
             } catch {
-                return
+                return false
             }
         }
     }

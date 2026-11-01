@@ -11,6 +11,8 @@ public final class DebugBundle {
         Self.initialize(config)
     }
 
+    public static var evidenceCapabilities: DebugBundleEvidenceCapabilities { lock.withLock { client }.evidenceCapabilities }
+
     public static var status: DebugBundleStatus {
         lock.withLock { client.status }
     }
@@ -22,10 +24,26 @@ public final class DebugBundle {
     @discardableResult
     public static func initialize(_ config: DebugBundleConfig, transport: DebugBundleTransporting = DebugBundleNoopTransport()) -> DebugBundleClient {
         lock.withLock {
+            client.evidence.close()
             client = DebugBundleClient(config: config, transport: transport)
             return client
         }
     }
+
+    public static func beginOperation() -> DebugBundleOperationScope { lock.withLock { client }.beginOperation() }
+    public static func withOperationContext<T>(_ operation: () throws -> T) rethrows -> T {
+        try lock.withLock { client }.withOperationContext(operation)
+    }
+    public static func withOperationContext<T>(_ operation: () async throws -> T) async rethrows -> T {
+        try await lock.withLock { client }.withOperationContext(operation)
+    }
+
+    @_spi(DebugBundleRuntime) @discardableResult public static func captureRuntimeReport(_ report: DebugBundleRuntimeReport,
+        context: [String: Any?] = [:], onRetained: (() -> Void)? = nil) -> Bool {
+        lock.withLock { client }.captureRuntimeReport(report, context: context, onRetained: onRetained)
+    }
+
+    public static func captureRecovery(_ observation: DebugBundleRecoveryObservation) { lock.withLock { client }.captureRecovery(observation) }
 
     public static func captureException(_ error: Error, context: [String: Any?] = [:]) {
         lock.withLock { client }.captureException(error, context: context)

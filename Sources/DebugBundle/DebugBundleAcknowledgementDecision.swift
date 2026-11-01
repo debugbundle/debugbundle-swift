@@ -33,7 +33,7 @@ func decideDebugBundleAcknowledgement(
     let rejectedIndexSet = Set(rejectedIndices)
     let acceptedFrontendException = events.indices.contains { index in
         !rejectedIndexSet.contains(index)
-            && events[index].eventType == DebugBundleEventType.frontendException
+            && debugBundleIsException(events[index].eventType)
     }
     let retryableIndices = Set(
         acknowledgement.errors

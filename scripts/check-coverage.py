@@ -11,8 +11,7 @@ SOURCES_ROOT = REPO_ROOT / "Sources"
 
 # This file only declares the diagnostic protocol and its no-op implementation.
 # LLVM emits no executable coverage regions for it, so there is no percentage to
-# evaluate. The ObjC exception shim is exercised by its bridge test but is not a
-# Swift source file and is therefore outside this Swift per-file gate.
+# evaluate. All Swift and Objective-C implementation files share the same gate.
 NO_EXECUTABLE_REGIONS = {
     (SOURCES_ROOT / "DebugBundle" / "DebugBundleInternalDiagnostic.swift").resolve()
 }
@@ -47,7 +46,7 @@ def main() -> None:
             if line_count > 0:
                 measured[filename] = float(line_summary.get("percent", 0.0))
 
-    source_files = {path.resolve() for path in SOURCES_ROOT.rglob("*.swift")}
+    source_files = {path.resolve() for suffix in ("*.swift", "*.m") for path in SOURCES_ROOT.rglob(suffix)}
     unexpected_allowlist = NO_EXECUTABLE_REGIONS - source_files
     if unexpected_allowlist:
         fail(
@@ -58,7 +57,7 @@ def main() -> None:
     missing = source_files - set(measured) - NO_EXECUTABLE_REGIONS
     if missing:
         fail(
-            "executable Swift sources are absent from the report: "
+            "executable native sources are absent from the report: "
             + ", ".join(str(path.relative_to(REPO_ROOT)) for path in sorted(missing))
         )
 
@@ -78,7 +77,7 @@ def main() -> None:
 
     lowest_path, lowest_percent = min(measured.items(), key=lambda item: item[1])
     print(
-        f"Swift per-file line coverage passed for {len(measured)} executable source files; "
+        f"Swift/Objective-C per-file line coverage passed for {len(measured)} executable source files; "
         f"lowest is {lowest_path.relative_to(REPO_ROOT)} at {lowest_percent:.2f}%."
     )
 
