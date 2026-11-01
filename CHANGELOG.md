@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### 3.1.0 candidate (not published)
+## [3.1.1] - 2026-11-01
+
+- Enforce native reply deadlines and caller cancellation without waiting for a delayed Foundation cancellation callback. Keep response byte/encoding bounds and cancel the losing read; body encoding shares the same request deadline. Regression tests include a native callback that deliberately ignores cancellation.
+- Supersede the tagged 3.1.0 attempt whose CocoaPods publication was stopped by the older-simulator deadline regression. Existing tags remain immutable.
 
 - Restore actual Swift5.10 compatibility in the logging adapter; retain the modern SwiftLog event overload on Swift6.2+ and declare its existing swift-log1.12.0 minimum explicitly.
 - Add negotiated bounded NSError cause evidence, explicit recovery observations, operation scopes and complete canonical bridge preservation, retaining legacy stacks/grouping and capture signatures.

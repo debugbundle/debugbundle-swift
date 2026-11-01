@@ -13,6 +13,7 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
     }
 
     public func send(events: [DebugBundleEventEnvelope], config: DebugBundleConfig) async throws -> DebugBundleTransportResult {
+        let deadline = DebugBundleHTTPReply.deadline(timeout: config.requestTimeout)
         var request = URLRequest(url: config.endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = config.requestTimeout
@@ -24,7 +25,9 @@ public struct DebugBundleHTTPTransport: DebugBundleTransporting {
         guard events.count <= 100, body.count <= DebugBundleIngestionWire.maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
         request.httpBody = body
 
-        let reply = try await DebugBundleHTTPReply.read(session: session, request: request, timeout: config.requestTimeout)
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else { throw URLError(.timedOut) }
+        let reply = try await DebugBundleHTTPReply.read(session: session, request: request, timeout: remaining)
         let (data, response) = (reply.data, reply.response)
         guard let httpResponse = response as? HTTPURLResponse else {
             return DebugBundleTransportResult(statusCode: 599)

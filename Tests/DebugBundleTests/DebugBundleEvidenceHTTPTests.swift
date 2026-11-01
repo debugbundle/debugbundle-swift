@@ -11,6 +11,55 @@ final class DebugBundleEvidenceHTTPTests: XCTestCase {
     }
     private let ack = Data("{\"accepted\":0,\"rejected\":0,\"errors\":[]}".utf8)
 
+    func testDeadlineDoesNotWaitForDelayedNativeCancellation() async throws {
+        let response = URLResponse(url: URL(string: "https://example.invalid")!, mimeType: nil, expectedContentLength: 0, textEncodingName: nil)
+        let completed = expectation(description: "late native callback completes")
+        let started = ProcessInfo.processInfo.systemUptime
+        do {
+            _ = try await DebugBundleHTTPReply.withDeadline(timeout: 0.03) {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+                        continuation.resume(returning: .init(data: Data(), response: response))
+                        completed.fulfill()
+                    }
+                }
+            }
+            XCTFail("The deadline must reject a native callback that ignores cancellation")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.2)
+        await fulfillment(of: [completed], timeout: 2)
+    }
+
+    func testCallerCancellationDoesNotWaitForDelayedNativeCallback() async throws {
+        let reply = DebugBundleHTTPReply.Reply(data: Data(), response: URLResponse(url: URL(string: "https://example.invalid")!, mimeType: nil, expectedContentLength: 0, textEncodingName: nil))
+        let entered = expectation(description: "native read entered")
+        let completed = expectation(description: "late cancelled read completed")
+        let request = Task {
+            try await DebugBundleHTTPReply.withDeadline(timeout: 10) {
+                await withCheckedContinuation { continuation in
+                    entered.fulfill()
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+                        continuation.resume(returning: reply)
+                        completed.fulfill()
+                    }
+                }
+            }
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        let started = ProcessInfo.processInfo.systemUptime
+        request.cancel()
+        do {
+            _ = try await request.value
+            XCTFail("Caller cancellation must reject the native read")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .cancelled)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.2)
+        await fulfillment(of: [completed], timeout: 2)
+    }
+
     func testAcknowledgedChunkSnapshotRemainsChargedUntilTheSenderReleasesItsTail() async throws {
         let session = session()
         defer { session.invalidateAndCancel() }
@@ -26,7 +75,10 @@ final class DebugBundleEvidenceHTTPTests: XCTestCase {
             let reply: JSONValue = .object(["accepted": .number(Double(count)), "rejected": .number(0), "errors": .array([])])
             return (200, [:], try JSONEncoder().encode(reply), index == 2 ? 0.15 : 0)
         }
-        let client = makeIsolatedClient(config: .init(projectToken: "fictional", service: "ios", batchSize: 10, flushInterval: 60,
+        // This large-payload case asserts snapshot ownership, not a request latency
+        // budget. Leave encoding headroom on older simulators; deadline cases below
+        // retain their explicit short limits.
+        let client = makeIsolatedClient(config: .init(projectToken: "fictional", service: "ios", batchSize: 10, flushInterval: 60, requestTimeout: 30,
             offlineQueueMaxEvents: 2, beforeSend: { input in
                 guard input.eventType == "frontend_exception" else { return input }
                 calls.hook()

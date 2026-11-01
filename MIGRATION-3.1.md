@@ -53,3 +53,7 @@ Canonical React Native events retain structured evidence, nullable metadata and
 all correlation fields through the native queue. Legacy bridge migration remains
 available, while invalid new evidence cannot be stripped into a legacy success.
 No browser passive collector or browser relay host is added to iOS.
+
+Use Swift 3.1.1 or later for the evidence release. It includes the native deadline
+correction found by the older-simulator release gate. No API or persisted-data
+migration is required; the 3.1.0 attempt was not published to CocoaPods.

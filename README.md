@@ -1,6 +1,6 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.0--candidate-orange)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.1-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -12,11 +12,11 @@ Swift is a mobile client SDK, not a browser relay host. It sends mobile events t
 
 The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle`.
 
-## Unpublished 3.1.0 evidence candidate
+## Structured evidence in 3.1.1
 
-The current working candidate adds `withEvidenceOptions(DebugBundleEvidenceOptions(...))` without changing existing configuration initializers. Structured exception evidence defaults on only for a proven complete delivery path; standalone recovery defaults off. Custom transports and opaque relays require an explicit complete-path `DebugBundleEvidenceCapabilities` pin. Native HTTP/config discovers support through the existing requests, with bounded identity/UTF-8 responses and a total request deadline. Missing or unknown proof downgrades optional evidence on retries while preserving the protected primary failure.
+Version 3.1.1 adds `withEvidenceOptions(DebugBundleEvidenceOptions(...))` without changing existing configuration initializers. Structured exception evidence defaults on only for a proven complete delivery path; standalone recovery defaults off. Custom transports and opaque relays require an explicit complete-path `DebugBundleEvidenceCapabilities` pin. Native HTTP/config discovers support through the existing requests, with bounded identity/UTF-8 responses and a total request deadline. Missing or unknown proof downgrades optional evidence on retries while preserving the protected primary failure.
 
-Native cause collection runs on the existing delivery worker and keeps only weak error references across admission. Exact Foundation `NSError` values support `NSUnderlyingErrorKey` and `NSMultipleUnderlyingErrorsKey`, under eight-node/four-depth/five-child and 32KiB addition bounds. Root `Thread.callStackSymbols` locations are capture-time evidence. Underlying errors do not acquire fabricated throw-site stacks; arbitrary Swift value errors and unsafe custom native accessors report unavailable details. No Mirror, frame-local inspection or symbolication is added. A collected or deallocated error cannot be recovered retrospectively. Native/runtime, packaged-artifact and complete parity qualification remain in progress; this candidate is not published. See [3.1 compatibility and evidence guidance](MIGRATION-3.1.md).
+Native cause collection runs on the existing delivery worker and keeps only weak error references across admission. Exact Foundation `NSError` values support `NSUnderlyingErrorKey` and `NSMultipleUnderlyingErrorsKey`, under eight-node/four-depth/five-child and 32KiB addition bounds. Root `Thread.callStackSymbols` locations are capture-time evidence. Underlying errors do not acquire fabricated throw-site stacks; arbitrary Swift value errors and unsafe custom native accessors report unavailable details. No Mirror, frame-local inspection or symbolication is added. A collected or deallocated error cannot be recovered retrospectively. The release gates qualify native/runtime, packaged artifacts and compatibility before publication. See [3.1 compatibility and evidence guidance](MIGRATION-3.1.md).
 
 ### Explicit recovery and operation scope
 
@@ -248,7 +248,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.0` candidate | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.1.1` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -321,7 +321,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Published package baseline | `v3.0.1`; local unpublished candidate `3.1.0` |
+| Published package baseline | `v3.1.1`; immutable `v3.1.0` attempt retained |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
