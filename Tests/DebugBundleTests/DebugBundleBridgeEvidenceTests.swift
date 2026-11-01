@@ -17,15 +17,17 @@ final class DebugBundleBridgeEvidenceTests: XCTestCase {
         event.correlation = .init(requestId: "request", traceId: "trace", sessionId: "0", userIdHash: "opaque-user-hash")
         return try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(event)) as? [String: Any?])
     }
-    private func client(_ transport: RecordingTransport) -> DebugBundleClient {
+    private func client(_ transport: RecordingTransport, policy: DebugBundleRemoteConfigClienting = BridgeEvidencePolicy()) -> DebugBundleClient {
         makeIsolatedClient(config: DebugBundleConfig(projectToken: "fictional", service: "native", flushInterval: 60)
             .withEvidenceOptions(.init(captureRecoveryObservations: true, evidenceCapabilities: .init(features: DebugBundleEvidenceCapabilities.known))),
-            transport: transport, remoteConfigClient: BridgeEvidencePolicy(), random: { 0 })
+            transport: transport, remoteConfigClient: policy, random: { 0 })
     }
     func testNativeCapabilityGetterIntersectsLocalOptionsAndDiagnosticPolicy() async {
-        let client = client(RecordingTransport())
+        let policy = BridgeSwitchableEvidencePolicy()
+        let client = client(RecordingTransport(), policy: policy)
         XCTAssertTrue(client.evidenceCapabilities.features.contains("exception_evidence_v1"))
         XCTAssertFalse(client.evidenceCapabilities.features.contains("recovery_v1"))
+        await policy.enable()
         await client.refreshRemoteConfig()
         XCTAssertEqual(client.evidenceCapabilities.features, DebugBundleEvidenceCapabilities.known)
         let disabled = makeIsolatedClient(config: DebugBundleConfig(projectToken: "fictional")
@@ -173,6 +175,15 @@ final class DebugBundleBridgeEvidenceTests: XCTestCase {
         raw["context"] = ["foreign": value]
         XCTAssertFalse(client(RecordingTransport()).captureExternalEvent(raw))
         XCTAssertEqual(value.calls, 0)
+    }
+}
+// Startup refresh can complete before the first assertion. Keep policy unavailable
+// until this test explicitly enables it, independent of task scheduling.
+private actor BridgeSwitchableEvidencePolicy: DebugBundleRemoteConfigClienting {
+    private var enabled = false
+    func enable() { enabled = true }
+    func fetch(request: DebugBundleRemoteConfigRequest) async -> DebugBundleRemoteConfigResult {
+        enabled ? .loaded(.init(capturePolicy: .init(preset: "balanced")), eTag: nil) : .failed
     }
 }
 private struct BridgeEvidencePolicy: DebugBundleRemoteConfigClienting {
