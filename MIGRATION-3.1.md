@@ -1,6 +1,6 @@
 # Swift 3.1 evidence compatibility
 
-This is an unpublished additive candidate. Existing initializers, capture return
+Version 3.1.1 is an additive release. Existing initializers, capture return
 values, transport/store protocols and explicit crash-report callbacks remain
 available. Continue to follow [the 3.0 timing migration](MIGRATION-3.0.md).
 
