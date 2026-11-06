@@ -1,10 +1,19 @@
-name: Publish CocoaPods
+name: Publish Swift SDK
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish_trunk:
+        description: Also publish to writable CocoaPods Trunk (explicit channel only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
   publish:
@@ -50,7 +59,46 @@ jobs:
       - name: Run clean CocoaPods delivery smoke
         run: make smoke-cocoapods
 
-      - name: Publish podspec
+      - name: Resolve immutable Git release
+        id: native_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(ruby -ne 'if $_ =~ /s\.version\s*=\s*"([^"]+)"/; puts $1; exit; end' DebugBundle.podspec)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          tag="v$VERSION"
+          if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$tag:refs/tags/$tag"
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
+          fi
+
+      - name: Verify public SPM and Git CocoaPods consumers
+        run: |
+          make smoke-spm-published VERSION="${{ steps.native_version.outputs.version }}"
+          make smoke-cocoapods-git VERSION="${{ steps.native_version.outputs.version }}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.native_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" --verify-tag --title "Swift $VERSION" --generate-notes
+          echo "SPM and Git CocoaPods are qualified. CocoaPods Trunk is a separate, explicitly selected channel." >> "$GITHUB_STEP_SUMMARY"
+
+  trunk:
+    name: Explicit CocoaPods Trunk channel
+    needs: publish
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_trunk }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install CocoaPods
+        run: gem install cocoapods --no-document
+      - name: Publish podspec to Trunk
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |

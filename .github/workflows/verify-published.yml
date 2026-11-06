@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published CocoaPods version to verify
+        description: Published native Git version to verify
         required: true
         type: string
 permissions:
@@ -24,4 +24,5 @@ jobs:
         run: |
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           node --version
-          make smoke-cocoapods-published VERSION="$VERSION"
+          make smoke-spm-published VERSION="$VERSION"
+          make smoke-cocoapods-git VERSION="$VERSION"

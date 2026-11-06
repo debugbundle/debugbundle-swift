@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Retain deterministic source-distribution bytes and exact local qualification receipts."""
 import gzip
+import argparse
 import hashlib
 import io
 import json
@@ -10,6 +11,13 @@ import subprocess
 import tarfile
 
 root = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--receipt", action="append", type=Path, default=[],
+                    help="Explicit current qualification log; omit for an unqualified source archive")
+receipts = parser.parse_args().receipt
+for receipt in receipts:
+    if not receipt.is_file():
+        parser.error(f"qualification receipt does not exist: {receipt}")
 version = re.search(r's.version\s*=\s*"([0-9.]+)"', (root / "DebugBundle.podspec").read_text()).group(1)
 
 def digest(path):
@@ -39,12 +47,6 @@ with tarfile.open(fileobj=raw, mode="w") as archive:
             archive.addfile(info, handle)
 artifact.write_bytes(gzip.compress(raw.getvalue(), mtime=0))
 
-receipts = [
-    Path("/tmp/debugbundle-zod4-swift-schema-qualification2.log"),
-    Path("/tmp/debugbundle-zod4-swift-ios-qualification.log"),
-    Path("/tmp/debugbundle-zod4-swift-performance.log"),
-    Path("/tmp/debugbundle-zod4-swift-ios-performance.log"),
-]
 manifest = {
     "version": 1, "candidate_version": version, "source_state": "uncommitted local candidate",
     "base_commit": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),
@@ -52,7 +54,8 @@ manifest = {
     "sources": sources,
     "artifacts": [{"path": str(artifact.relative_to(root)), "sha256": digest(artifact), "bytes": artifact.stat().st_size}],
     "receipts": [{"path": str(path), "sha256": digest(path)} for path in receipts],
-    "remaining": ["exact archive consumer receipts including Swift5.10", "whole-phase qualification", "separate publication authority"],
+    "qualification": "explicit receipts attached" if receipts else "source archive only; qualification pending",
+    "remaining": ["exact archive consumer receipts including Swift5.10", "release qualification", "separate publication authority"],
     "measurement_limits": ["simulator performance is not a physical-device measurement", "Swift5.10 XCTest requires a matching older Xcode test framework"],
 }
 output = root / ".tmp/evidence-artifact-manifest.json"

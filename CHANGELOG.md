@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-11-06
+
+- Qualify immutable Git-tag delivery through SPM and CocoaPods without requiring a new Trunk catalogue entry. Trunk remains an explicit independent publishing channel; existing published pods stay available.
+
+- Make local source-artifact manifests accept explicit current qualification receipts instead of hard-coded historical temporary logs.
+
+- Preserve native SwiftLog Error/NSError underlying-cause evidence in error records through exception capture. Older metadata-only logger APIs retain their existing limitations.
+- Existing event schemas remain compatible; complete exception inputs may create new future fingerprints. Consumer installations require an explicit upgrade.
+
 ## [3.1.1] - 2026-11-01
 
 - Enforce native reply deadlines and caller cancellation without waiting for a delayed Foundation cancellation callback. Keep response byte/encoding bounds and cancel the losing read; body encoding shares the same request deadline. Regression tests include a native callback that deliberately ignores cancellation.

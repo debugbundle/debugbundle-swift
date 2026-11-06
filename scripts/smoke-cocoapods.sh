@@ -8,13 +8,17 @@ SMOKE_DIR="$REPO_DIR/.smoke/cocoapods"
 EVENTS_FILE="$SMOKE_DIR/events.ndjson"
 PORT=${DEBUGBUNDLE_SMOKE_PORT:-18083}
 PUBLISHED_VERSION=""
+GIT_VERSION=""
 
 if [ "${1:-}" = "--published" ]; then
   PUBLISHED_VERSION=${2:?published CocoaPods version is required}
+elif [ "${1:-}" = "--git" ]; then
+  GIT_VERSION=${2:?published Git version is required}
 elif [ "$#" -ne 0 ]; then
-  echo "Usage: $0 [--published VERSION]" >&2
+  echo "Usage: $0 [--published VERSION | --git VERSION]" >&2
   exit 1
 fi
+python3 -c 'import re,sys; assert all(not v or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", v) for v in sys.argv[1:])' "$PUBLISHED_VERSION" "$GIT_VERSION"
 
 cleanup() {
   if [ -n "${SERVER_PID:-}" ]; then
@@ -41,7 +45,9 @@ else
   GEM_HOME="$POD_GEM_HOME" "$POD_RUBY" "$REPO_DIR/scripts/create-cocoapods-smoke-project.rb" "$SMOKE_DIR" "$SMOKE_ENDPOINT"
 fi
 
-if [ -n "$PUBLISHED_VERSION" ]; then
+if [ -n "$GIT_VERSION" ]; then
+  POD_DECLARATION="pod 'DebugBundle', :git => 'https://github.com/debugbundle/debugbundle-swift.git', :tag => 'v$GIT_VERSION'"
+elif [ -n "$PUBLISHED_VERSION" ]; then
   POD_DECLARATION="pod 'DebugBundle', '$PUBLISHED_VERSION'"
 else
   POD_DECLARATION="pod 'DebugBundle', :path => '$REPO_DIR'"
@@ -88,6 +94,10 @@ xcodebuild test \
 if [ ! -s "$EVENTS_FILE" ]; then
   echo "Swift clean CocoaPods consumer did not reach mock ingestion" >&2
   exit 1
+fi
+if [ -n "$GIT_VERSION" ]; then
+  grep -F "v$GIT_VERSION" "$SMOKE_DIR/Podfile.lock" >/dev/null
+  grep -F 'https://github.com/debugbundle/debugbundle-swift.git' "$SMOKE_DIR/Podfile.lock" >/dev/null
 fi
 
 echo "Swift CocoaPods artifact smoke passed."

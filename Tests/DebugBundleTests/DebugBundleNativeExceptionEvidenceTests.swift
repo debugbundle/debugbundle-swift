@@ -4,6 +4,24 @@ import DebugBundleTestSupport
 @testable import DebugBundle
 
 final class DebugBundleNativeExceptionEvidenceTests: XCTestCase {
+    func testLoggedNativeErrorUsesOnePrimaryExceptionAndKeepsUnderlyingCause() async throws {
+        let root = NSError(domain: "outer", code: 1, userInfo: [NSUnderlyingErrorKey: NSError(domain: "cause", code: 2)])
+        let transport = RecordingTransport()
+        let client = makeIsolatedClient(config: DebugBundleConfig(projectToken: "fictional", service: "ios", flushInterval: 60)
+            .withEvidenceOptions(.init(evidenceCapabilities: .init(features: ["exception_evidence_v1"]))), transport: transport, random: { 0 })
+        client.captureLog("operation failed", level: .error, context: ["error": root])
+        await client.flush()
+        withExtendedLifetime(root) {}
+        let events = await transport.recordedBatches().flatMap { $0 }
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.eventType, DebugBundleEventType.frontendException)
+        XCTAssertEqual(events.first?.payload["exception_evidence"]?.objectValue?["nodes"]?.arrayValue?.count, 2)
+        client.capturePolicy = .fromRemotePolicy(.init(preset: "balanced"))
+        client.captureLog("warning context", level: .warning, context: ["error": root])
+        await client.flush()
+        let afterWarning = await transport.recordedBatches().flatMap { $0 }
+        XCTAssertEqual(afterWarning.last?.eventType, DebugBundleEventType.logEvent)
+    }
     func testNativeUnderlyingAndAggregateErrorsPreservePrimaryAndHonestOrigins() async throws {
         let shared = NSError(domain: "cause", code: 2, userInfo: [NSLocalizedDescriptionKey: "cause token=fictional-secret"])
         let root = NSError(domain: "outer", code: 1, userInfo: [NSLocalizedDescriptionKey: "primary failure",

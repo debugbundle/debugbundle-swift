@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 SWIFT_TEST_ARGS ?=
 XCODE_TEST_ARGS ?=
+RECEIPT_FILES ?=
 
 .PHONY: test
 test: coverage
@@ -31,9 +32,16 @@ coverage-check:
 smoke-spm:
 	./scripts/smoke-spm.sh
 
+.PHONY: smoke-spm-published smoke-cocoapods-git
+smoke-spm-published:
+	sh scripts/smoke-spm.sh --published "$(VERSION)"
+
+smoke-cocoapods-git:
+	sh scripts/smoke-cocoapods.sh --git "$(VERSION)"
+
 .PHONY: evidence-manifest
 evidence-manifest:
-	python3 scripts/evidence-artifact-manifest.py
+	python3 scripts/evidence-artifact-manifest.py $(foreach receipt,$(RECEIPT_FILES),--receipt "$(receipt)")
 
 .PHONY: smoke-source-artifact
 smoke-source-artifact: evidence-manifest

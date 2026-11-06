@@ -55,7 +55,7 @@ const server = createServer((request, response) => {
           event.schema_version !== "2026-03-01" ||
           typeof event.event_id !== "string" ||
           event.sdk_name !== "@debugbundle/sdk-swift" ||
-          event.sdk_version !== "3.1.1" ||
+          event.sdk_version !== "3.1.2" ||
           event.service?.name !== expectedService ||
           event.service?.environment !== "smoke" ||
           event.correlation?.trace_id !== "11111111111111111111111111111111"

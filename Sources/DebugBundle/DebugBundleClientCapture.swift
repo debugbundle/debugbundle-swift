@@ -50,6 +50,13 @@ extension DebugBundleClient {
             capturePolicy.capturesLog(level, localEnabled: config.captureLogs, localThreshold: config.logLevel)
         }
         guard eligible, canAdmit(priority: level == .error || level == .critical ? 2 : 0) else { return }
+        if (level == .error || level == .critical), let error = context["error"] as? Error {
+            var fields = context
+            fields.removeValue(forKey: "error")
+            fields["log_message"] = message
+            captureException(error, context: fields)
+            return
+        }
         let mergedContext = mergedContext(context)
         let payload: [String: JSONValue] = [
             "level": .string(String(describing: level).lowercased()),

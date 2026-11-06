@@ -1,6 +1,8 @@
 # DebugBundle Swift
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.1-blue)
+Patch 3.1.2 corrects native logger exception evidence and capture safety while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the correction.
+
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.2-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -10,7 +12,7 @@ Version **3.0.0** changes hook and persistence timing. Review [the v3 migration]
 
 Swift is a mobile client SDK, not a browser relay host. It sends mobile events to the configured ingestion endpoint and uses explicit first-party URLSession or Alamofire instrumentation for trace correlation; browser relay settings such as `transportMode`, `allowedOrigins`, and CORS preflight handling belong to the Browser SDK plus a backend/server SDK relay.
 
-The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle`.
+The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle` from the same immutable Git tag.
 
 ## Structured evidence in 3.1.1
 
@@ -93,7 +95,7 @@ Add the package to your app target:
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.0.1` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.2` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -101,7 +103,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", "~> 3.0"
+	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.2"
 end
 ```
 
@@ -111,7 +113,7 @@ Then run:
 pod install
 ```
 
-The CocoaPods package currently publishes the core `DebugBundle` native client used by React Native and brownfield pod-based iOS apps. Use Swift Package Manager when you need the optional Swift package products listed below.
+The Git CocoaPods path supplies the core `DebugBundle` native client used by React Native and brownfield pod-based iOS apps. Existing Trunk versions remain available; new versions use the immutable Git source above and do not require a new catalogue write. Use Swift Package Manager when you need the optional Swift package products listed below.
 
 Available products:
 
@@ -248,7 +250,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.1` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.1.2` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -326,7 +328,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
 
-## CocoaPods Release
+## Native Git and CocoaPods Release
 
 Validate the podspec before release:
 
@@ -334,7 +336,7 @@ Validate the podspec before release:
 make pod-lint
 ```
 
-Publish from an authenticated CocoaPods trunk session:
+The tagged release workflow verifies public SPM and Git CocoaPods consumers before creating its GitHub Release. Trunk publication is an independent channel, selected explicitly with the workflow `publish_trunk` input only when the provider accepts writes. A denied Trunk write fails that channel. To publish from an authenticated writable Trunk session:
 
 ```sh
 make pod-publish
@@ -431,7 +433,7 @@ make build
 ```
 
 `make test-ios-simulator` auto-resolves a usable iPhone simulator from the locally installed runtimes.
-The CocoaPods publication workflow runs this simulator gate and compiles the iOS 15 deployment target before pushing a podspec.
+The native publication workflow runs this simulator gate and compiles the iOS 15 deployment target before verifying public Git consumers. Trunk publication remains an explicitly selected independent channel.
 
 Override the simulator destination when needed:
 
