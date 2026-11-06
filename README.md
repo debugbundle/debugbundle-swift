@@ -79,7 +79,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 .dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.0.1")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.2")
 ],
 .targets: [
 	.target(
@@ -323,7 +323,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Published package baseline | `v3.1.1`; immutable `v3.1.0` attempt retained |
+| Current Git/SPM release | `v3.1.2`; existing Trunk `3.1.1` remains available |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
