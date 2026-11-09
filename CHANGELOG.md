@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.3] - 2026-11-09
+
+- Redact standalone organisation invitation and ownership-transfer credentials from free text before retention or transport, using the shared 27-case privacy corpus. Preserve capture APIs, event schemas and supported platform floors.
+- Existing installations adopt this protection when explicitly upgraded.
+
 ## [3.1.2] - 2026-11-06
 
 - Qualify immutable Git-tag delivery through SPM and CocoaPods without requiring a new Trunk catalogue entry. Trunk remains an explicit independent publishing channel; existing published pods stay available.

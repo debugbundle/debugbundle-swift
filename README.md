@@ -1,8 +1,8 @@
 # DebugBundle Swift
 
-Patch 3.1.2 corrects native logger exception evidence and capture safety while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the correction.
+Patch 3.1.3 protects invitation and organisation-transfer credentials in captured text while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the protection.
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.2-blue)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.3-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -79,7 +79,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 .dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.2")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.3")
 ],
 .targets: [
 	.target(
@@ -95,7 +95,7 @@ Add the package to your app target:
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.2` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.3` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -103,7 +103,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.2"
+	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.3"
 end
 ```
 
@@ -250,7 +250,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.2` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.1.3` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -323,7 +323,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current Git/SPM release | `v3.1.2`; existing Trunk `3.1.1` remains available |
+| Current Git/SPM release | `v3.1.3`; existing Trunk `3.1.1` remains available |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -491,3 +491,12 @@ traffic local and setup outside capture measurements. The test checks native cau
 original error priority and existing diagnostic/count/byte ceilings. Use the existing
 iOS simulator target with `XCODE_TEST_ARGS='-configuration Release ENABLE_TESTABILITY=YES -only-testing:DebugBundleTests/DebugBundleEvidencePerformanceTests'`
 for the same comparison on the simulator; neither host nor simulator proves device costs.
+
+
+### Unreleased acceptance-credential privacy
+
+The source candidate also scrubs standalone `dbundle_invite_`,
+`dbundle_org_invite_` and `dbundle_org_transfer_` acceptance secrets before
+SDK-owned retention or transmission. See the [shared qualification record](https://github.com/debugbundle/debugbundle/blob/main/spec/business-credential-redaction.md).
+Published packages keep their released behaviour until the coordinated dependency
+and distribution checks are completed and a new version is published.
