@@ -598,7 +598,7 @@ public final class DebugBundleClient {
                     message: "Removed terminally rejected events after indexed ingestion acknowledgement",
                     metadata: [
                         "rejected_event_count": .number(Double(terminalErrors.count)),
-                        "first_reason": .string(terminalErrors[0].reason)
+                        "first_reason": .string(DebugBundleInternalDiagnostic.safeReason(terminalErrors[0].reason))
                     ],
                     recordedAt: now
                 )

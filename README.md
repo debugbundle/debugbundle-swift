@@ -1,8 +1,8 @@
 # DebugBundle Swift
 
-Patch 3.1.4 protects invitation and organisation-transfer credentials in captured text while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the protection.
+Patch 3.1.5 preserves application hook redaction under optional-evidence limits and complete validation. Public capture APIs and event schemas remain compatible.
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.4-blue)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.5-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -23,7 +23,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.4")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.5")
 ],
 targets: [
 	.target(
@@ -39,7 +39,7 @@ targets: [
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.4` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.5` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -47,7 +47,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.4"
+	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.5"
 end
 ```
 
@@ -249,7 +249,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
 | `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.4` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.1.5` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -378,7 +378,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current Git/SPM release | `v3.1.4`; existing Trunk `3.1.1` remains available |
+| Current Git/SPM release | `v3.1.5`; existing Trunk `3.1.1` remains available |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -530,3 +530,17 @@ The SDK scrubs standalone `dbundle_invite_`,
 `dbundle_org_invite_` and `dbundle_org_transfer_` acceptance secrets before
 SDK-owned retention or transmission. See the [shared qualification record](https://github.com/debugbundle/debugbundle/blob/main/spec/business-credential-redaction.md).
 Existing installations receive this protection when upgraded to a version that includes it.
+
+### Hook size limits (unreleased correction)
+
+A hook replacement whose optional exception evidence exceeds the combined 32 KiB
+UTF-8 JSON budget keeps its replacement message and other primary fields. The SDK
+omits the oversized optional evidence and its typed reference, recording
+`context.evidence_limits`. Ordinary custom context remains intact. A size limit
+must not restore text removed by the hook; an otherwise valid replacement that
+cannot fit later ownership or transport limits is withheld. Malformed returns and
+throwing hooks retain the established protected-original fallback.
+
+### Internal SDK diagnostics
+
+Internal SDK diagnostics stay in the existing local status snapshot; no separate maintainer-reporting request is made. Rejection details retain bounded protocol codes only (64 ASCII bytes); credential-shaped or unsafe/free-text detail becomes `unknown_rejection`. Acknowledgement, retry and queue decisions continue to use the original transport response.

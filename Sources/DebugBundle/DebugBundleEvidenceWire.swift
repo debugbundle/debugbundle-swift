@@ -1,9 +1,27 @@
 import Foundation
 
 enum DebugBundleEvidenceWire {
-    static func accepts(_ event: JSONValue) throws -> Bool {
+    static func fitHookEvidence(_ event: DebugBundleEventEnvelope) throws -> DebugBundleEventEnvelope {
+        // Check ownership first, before traversing or retaining an owner replacement.
+        try DebugBundleNativeJSONBudget.check(debugBundleAuthoredWire(event))
+        guard ["backend_exception", "frontend_exception"].contains(event.eventType) else { return event }
+        var additions = event.payload.filter { ["exception_evidence", "execution", "resource_observations"].contains($0.key) }
+        guard !additions.isEmpty else { return event }
+        if let ref = event.context?["evidence_reference"], reference(ref) { additions["evidence_reference"] = ref }
+        guard DebugBundleAcceptingJSONSize.bytes(.object(additions)) > 32_768 else { return event }
+        guard try accepts(debugBundleAuthoredWire(event), checkByteBudget: false) else { return event }
+        var reduced = DebugBundleIngestionWire.withoutEvidence(event)
+        additions.removeValue(forKey: "evidence_reference")
+        var limits = additions.mapValues { _ in JSONValue.string("budget_exceeded") }
+        limits["version"] = .number(1)
+        if reduced.context == nil { reduced.context = [:] }
+        reduced.context?["evidence_limits"] = .object(limits)
+        return reduced
+    }
+
+    static func accepts(_ event: JSONValue, checkByteBudget: Bool = true) throws -> Bool {
         try DebugBundleNativeJSONBudget.check(event)
-        return try DebugBundleCanonicalEventSchema.accepts(event) && semantic(event)
+        return try DebugBundleCanonicalEventSchema.accepts(event) && semantic(event, checkByteBudget: checkByteBudget)
     }
     static func freshId(_ text: String?) -> Bool {
         guard let text, DebugBundleCanonicalEventSchema.uuid(text) else { return false }
@@ -25,7 +43,7 @@ enum DebugBundleEvidenceWire {
         guard let text = value?.stringValue else { return false }
         return text.utf8.prefix(maximum + 1).count <= maximum
     }
-    private static func semantic(_ value: JSONValue) -> Bool {
+    private static func semantic(_ value: JSONValue, checkByteBudget: Bool) -> Bool {
         guard let event = value.objectValue, let payload = event["payload"]?.objectValue else { return false }
         let type = event["event_type"]?.stringValue
         if type == "frontend_exception" {
@@ -46,16 +64,16 @@ enum DebugBundleEvidenceWire {
         for field in ["exception_evidence", "execution", "resource_observations"] {
             guard let item = payload[field] else { continue }
             if !(type == "backend_exception" && field != "resource_observations" || type == "frontend_exception" && field != "execution") { return false }
-            if field == "exception_evidence" && !graph(item) { return false }
+            if field == "exception_evidence" && !graph(item, checkByteBudget: checkByteBudget) { return false }
             if field == "execution" && !bounded(item.objectValue?["name"], 128) { return false }
             if field == "resource_observations" && !resources(item) { return false }
             additions[field] = item
         }
         if additions.isEmpty { return true }
         if let item = event["context"]?.objectValue?["evidence_reference"], reference(item) { additions["evidence_reference"] = item }
-        return DebugBundleAcceptingJSONSize.bytes(.object(additions)) <= 32_768
+        return !checkByteBudget || DebugBundleAcceptingJSONSize.bytes(.object(additions)) <= 32_768
     }
-    private static func graph(_ value: JSONValue) -> Bool {
+    private static func graph(_ value: JSONValue, checkByteBudget: Bool) -> Bool {
         guard let graph = value.objectValue, let nodes = graph["nodes"]?.arrayValue else { return false }
         var edges: [Double: [Double]] = [:]
         for item in nodes {
@@ -85,7 +103,7 @@ enum DebugBundleEvidenceWire {
             active.remove(id); return true
         }
         guard let root = graph["root_id"]?.doubleValue else { return false }
-        return visit(root, 0) && reached.count == nodes.count && DebugBundleAcceptingJSONSize.bytes(value) <= 32_768
+        return visit(root, 0) && reached.count == nodes.count && (!checkByteBudget || DebugBundleAcceptingJSONSize.bytes(value) <= 32_768)
     }
     private static func resources(_ value: JSONValue?) -> Bool {
         guard let value, let items = value.objectValue?["items"]?.arrayValue else { return false }
