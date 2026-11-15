@@ -1,8 +1,8 @@
 # DebugBundle Swift
 
-Patch 3.1.3 protects invitation and organisation-transfer credentials in captured text while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the protection.
+Patch 3.1.4 protects invitation and organisation-transfer credentials in captured text while preserving public APIs and event schemas. Upgrade the DebugBundle distribution to adopt the protection.
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.3-blue)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.4-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -13,6 +13,247 @@ Version **3.0.0** changes hook and persistence timing. Review [the v3 migration]
 Swift is a mobile client SDK, not a browser relay host. It sends mobile events to the configured ingestion endpoint and uses explicit first-party URLSession or Alamofire instrumentation for trace correlation; browser relay settings such as `transportMode`, `allowedOrigins`, and CORS preflight handling belong to the Browser SDK plus a backend/server SDK relay.
 
 The Swift SDK is published through Swift Package Manager from `https://github.com/debugbundle/debugbundle-swift` and CocoaPods as `DebugBundle` from the same immutable Git tag.
+
+## Installation
+
+### Swift Package Manager
+
+Add the package to your app target:
+
+```swift
+// Package.swift
+dependencies: [
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.4")
+],
+targets: [
+	.target(
+		name: "CheckoutApp",
+		dependencies: [
+			.product(name: "DebugBundle", package: "debugbundle-swift"),
+			.product(name: "DebugBundleURLSession", package: "debugbundle-swift"),
+			.product(name: "DebugBundleUIKit", package: "debugbundle-swift"),
+			.product(name: "DebugBundleSwiftUI", package: "debugbundle-swift"),
+			.product(name: "DebugBundleSwiftLog", package: "debugbundle-swift")
+		]
+	)
+]
+```
+
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.4` or a compatible SemVer range.
+
+### CocoaPods
+
+Add the pod to your iOS app target:
+
+```ruby
+target "CheckoutApp" do
+	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.4"
+end
+```
+
+Then run:
+
+```sh
+pod install
+```
+
+The Git CocoaPods path supplies the core `DebugBundle` native client used by React Native and brownfield pod-based iOS apps. Existing Trunk versions remain available; new versions use the immutable Git source above and do not require a new catalogue write. Use Swift Package Manager when you need the optional Swift package products listed below.
+
+Available products:
+
+| Product | Purpose |
+| --- | --- |
+| `DebugBundle` | Core client, facade, queueing, transport, redaction, capture policy, and probes |
+| `DebugBundleURLSession` | URLSession instrumentation, trace propagation, and request capture |
+| `DebugBundleAlamofire` | Alamofire adapter for trace injection and request capture |
+| `DebugBundleUIKit` | UIApplication, UIScene, view-controller, and navigation helpers |
+| `DebugBundleSwiftUI` | SwiftUI screen, scene-phase, navigation, and action breadcrumbs |
+| `DebugBundleCrashReporter` | Next-launch crash evidence replay and Objective-C exception bridging |
+| `DebugBundleSwiftLog` | SwiftLog `LogHandler` integration |
+| `DebugBundleTestSupport` | Fake transports, queue inspection helpers, and mock ingestion support |
+
+## Initialize
+
+<a id="quick-start"></a>
+
+Add the Swift Package dependency to your application target. Initialize once from SwiftUI app initialization or UIKit launch, with `DebugBundleProjectToken` in Info.plist. Mobile tokens are public write-only ingestion credentials, never member tokens.
+
+```swift
+import Foundation
+import DebugBundle
+
+DebugBundle.initialize(
+    DebugBundleConfig(
+        projectToken: Bundle.main.debugBundleProjectToken,
+        environment: "production",
+        service: "ios-app"
+    )
+)
+```
+
+## Integrations
+
+UIKit, SwiftUI, URLSession, Alamofire, SwiftLog, crash replay and offline queueing are supported.
+
+### Application startup integration
+
+#### SwiftUI
+
+```swift
+import DebugBundle
+import DebugBundleSwiftUI
+
+@main
+struct CheckoutApp: App {
+	init() {
+		DebugBundle.initialize(
+			DebugBundleConfig(
+				projectToken: Bundle.main.debugBundleProjectToken,
+				service: "checkout-ios",
+				environment: "production",
+				releaseChannel: "app-store"
+			)
+		)
+	}
+
+	var body: some Scene {
+		WindowGroup {
+			CheckoutRootView()
+				.debugBundleScreen("CheckoutRoot")
+		}
+	}
+}
+```
+
+#### UIKit
+
+```swift
+import DebugBundle
+import DebugBundleUIKit
+import UIKit
+
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+	func application(
+		_ application: UIApplication,
+		didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+	) -> Bool {
+		DebugBundle.initialize(
+			DebugBundleConfig(
+				projectToken: Bundle.main.debugBundleProjectToken,
+				service: "checkout-ios",
+				environment: "production"
+			)
+		)
+
+		DebugBundleUIKit.install(application: application)
+		return true
+	}
+}
+```
+
+Capture explicit messages, logs, errors, and probes:
+
+```swift
+import DebugBundle
+
+DebugBundle.captureMessage("checkout_started")
+DebugBundle.captureLog("payment retry", level: .warning, context: ["attempt": attempt])
+DebugBundle.setContext("tenant", value: tenantID)
+DebugBundle.probe("checkout.cart", data: ["items": itemCount])
+
+Task {
+	do {
+		try await DebugBundle.captureAsync(context: ["screen": "Checkout"]) {
+			try await checkout()
+		}
+	} catch {
+		DebugBundle.captureException(error, context: ["flow": "checkout"])
+	}
+
+	await DebugBundle.flush()
+}
+```
+
+## First-event verification
+
+Use an explicit setup event in a development or staging application, then confirm the matching service and environment in a received event or incident. Initialization, a healthy status and an empty queue are not delivery receipts. Keep the application running long enough for delivery; use bounded flushing only in tests or controlled teardown, never in a request handler.
+
+Point the SDK at a mock, staging, or self-hosted ingestion endpoint that the simulator or device can actually reach:
+
+```swift
+import Foundation
+import DebugBundle
+
+DebugBundle.initialize(
+	DebugBundleConfig(
+		projectToken: Bundle.main.debugBundleProjectToken,
+		service: "checkout-ios",
+		environment: "staging",
+		endpoint: URL(string: "http://127.0.0.1:9001/v1/events")!
+	)
+)
+
+DebugBundle.captureMessage("swift-sdk-smoke", level: .error)
+
+Task {
+	await DebugBundle.flush()
+}
+```
+
+Then confirm the mock or staging project received the event with the expected `service`, `environment`, and SDK metadata.
+
+Confirm the event in DebugBundle and inspect its incident with the CLI. Mobile queues are app-private; they are not CLI local-event directories. A native queue entry or mock endpoint receipt does not prove cloud acceptance.
+
+## Configuration
+
+<a id="configuration-reference"></a>
+
+Configuration sources and precedence:
+
+1. Explicit `DebugBundleConfig(...)` fields always win.
+2. Runtime configuration and `Bundle` helpers fill values when you use the bundle-backed config path.
+3. SDK defaults apply for anything you leave unset.
+
+Capture-policy fields are server-owned and are not accepted in local SDK configuration. The SDK learns capture policy and probe directives through remote config and applies them locally before transport.
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `projectToken` | empty | Write-only DebugBundle project token. Missing or blank tokens leave connected delivery disabled. |
+| `enabled` | `true` | Global kill switch. |
+| `environment` | `production` | Environment label such as `production`, `staging`, or `development`. |
+| `service` | `ios-app` | Service name shown on incidents and bundles. |
+| `endpoint` | `https://api.debugbundle.com/v1/events` | Ingestion endpoint for cloud or self-hosted delivery. |
+| `batchSize` | `10` | Events per flush batch. |
+| `flushInterval` | `3` seconds | Background flush interval; delivery also depends on worker and transport availability. |
+| `sampleRate` | `1.0` | Per-event sample rate. |
+| `sessionSampleRate` | `1.0` | Session-level sampling decision for the whole app session. |
+| `requestTimeout` | `5` seconds | HTTP timeout for delivery and remote config fetches. |
+| `releaseChannel` | `production` | App release lane such as `app-store`, `testflight`, or `internal`. |
+| `appVersion` | app metadata when supplied | Human-readable app version attached to event metadata. |
+| `buildNumber` | app metadata when supplied | Build number attached to event metadata. |
+| `maxEventsPerSession` | `100` | Hard cap after which only exception capture continues. |
+| `maxBreadcrumbs` | `20` | Ring-buffer size for screen, action, network, and log breadcrumbs. |
+| `captureScreens` | `true` | Enable screen breadcrumbs. |
+| `captureActions` | `false` | Enable manual action breadcrumbs. |
+| `captureNetwork` | `true` | Enable first-party request capture. |
+| `captureLogs` | `true` | Enable log-event capture. |
+| `logLevel` | `.warning` | Minimum captured log severity. |
+| `tracePropagationTargets` | `[]` | Allowed first-party targets for `X-DebugBundle-Trace-Id` injection. |
+| `offlineQueueMaxEvents` | `500` | Shared cap across pending hooks, ready events, persistence snapshots and in-flight sends. |
+| `offlineQueueMaxBytes` | `5 MB` | Shared serialized-byte cap across all retained queue states; each event is also capped at 256 KiB. |
+| `offlineQueueTtl` | `72` hours | Drop queued events older than this on delivery attempt. |
+| `fileProtection` | `.completeUntilFirstUserAuthentication` | Queue file protection class for app-private storage. |
+| `offlineQueueURL` | SDK-managed Application Support path | Override queue storage location for tests or advanced setups. |
+| `maxProbeLabels` | `50` | Maximum distinct probe labels buffered in memory. |
+| `maxProbeEntriesPerLabel` | `10` | Ring-buffer size per probe label. |
+| `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
+| `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
+| `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
+| `sdkVersion` | `3.1.4` | SDK version stamped into outgoing event metadata. |
+
+Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
+
+`await flush()` waits at most `requestTimeout` (capped at 60 seconds), including preparation and persistence. It does not acknowledge events on timeout or free a stuck sender's ownership. Remote config runs separately. A stalled hook, store or transport causes bounded best-effort loss instead of additional workers or unbounded tasks. Use short, thread-safe hooks, and see [v3 migration](MIGRATION-3.0.md) for shutdown and custom-store implications.
 
 ## Structured evidence in 3.1.1
 
@@ -69,192 +310,6 @@ Caught Objective-C exceptions retain supported native frames via
 fatal storage is best effort and avoids waiting for another SDK store operation.
 It does not promise recovery from hard kill, OOM, signal-handler restrictions or
 unavailable storage. It adds no signal handler or third-party crash backend.
-
-## Installation
-
-### Swift Package Manager
-
-Add the package to your app target:
-
-```swift
-// Package.swift
-.dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.3")
-],
-.targets: [
-	.target(
-		name: "CheckoutApp",
-		dependencies: [
-			.product(name: "DebugBundle", package: "debugbundle-swift"),
-			.product(name: "DebugBundleURLSession", package: "debugbundle-swift"),
-			.product(name: "DebugBundleUIKit", package: "debugbundle-swift"),
-			.product(name: "DebugBundleSwiftUI", package: "debugbundle-swift"),
-			.product(name: "DebugBundleSwiftLog", package: "debugbundle-swift")
-		]
-	)
-]
-```
-
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.3` or a compatible SemVer range.
-
-### CocoaPods
-
-Add the pod to your iOS app target:
-
-```ruby
-target "CheckoutApp" do
-	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.3"
-end
-```
-
-Then run:
-
-```sh
-pod install
-```
-
-The Git CocoaPods path supplies the core `DebugBundle` native client used by React Native and brownfield pod-based iOS apps. Existing Trunk versions remain available; new versions use the immutable Git source above and do not require a new catalogue write. Use Swift Package Manager when you need the optional Swift package products listed below.
-
-Available products:
-
-| Product | Purpose |
-| --- | --- |
-| `DebugBundle` | Core client, facade, queueing, transport, redaction, capture policy, and probes |
-| `DebugBundleURLSession` | URLSession instrumentation, trace propagation, and request capture |
-| `DebugBundleAlamofire` | Alamofire adapter for trace injection and request capture |
-| `DebugBundleUIKit` | UIApplication, UIScene, view-controller, and navigation helpers |
-| `DebugBundleSwiftUI` | SwiftUI screen, scene-phase, navigation, and action breadcrumbs |
-| `DebugBundleCrashReporter` | Next-launch crash evidence replay and Objective-C exception bridging |
-| `DebugBundleSwiftLog` | SwiftLog `LogHandler` integration |
-| `DebugBundleTestSupport` | Fake transports, queue inspection helpers, and mock ingestion support |
-
-## Quick Start
-
-### SwiftUI
-
-```swift
-import DebugBundle
-import DebugBundleSwiftUI
-
-@main
-struct CheckoutApp: App {
-	init() {
-		DebugBundle.initialize(
-			DebugBundleConfig(
-				projectToken: Bundle.main.debugBundleProjectToken,
-				service: "checkout-ios",
-				environment: "production",
-				releaseChannel: "app-store"
-			)
-		)
-	}
-
-	var body: some Scene {
-		WindowGroup {
-			CheckoutRootView()
-				.debugBundleScreen("CheckoutRoot")
-		}
-	}
-}
-```
-
-### UIKit
-
-```swift
-import DebugBundle
-import DebugBundleUIKit
-import UIKit
-
-final class AppDelegate: UIResponder, UIApplicationDelegate {
-	func application(
-		_ application: UIApplication,
-		didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-	) -> Bool {
-		DebugBundle.initialize(
-			DebugBundleConfig(
-				projectToken: Bundle.main.debugBundleProjectToken,
-				service: "checkout-ios",
-				environment: "production"
-			)
-		)
-
-		DebugBundleUIKit.install(application: application)
-		return true
-	}
-}
-```
-
-Capture explicit messages, logs, errors, and probes:
-
-```swift
-import DebugBundle
-
-DebugBundle.captureMessage("checkout_started")
-DebugBundle.captureLog("payment retry", level: .warning, context: ["attempt": attempt])
-DebugBundle.setContext("tenant", value: tenantID)
-DebugBundle.probe("checkout.cart", data: ["items": itemCount])
-
-Task {
-	do {
-		try await DebugBundle.captureAsync(context: ["screen": "Checkout"]) {
-			try await checkout()
-		}
-	} catch {
-		DebugBundle.captureException(error, context: ["flow": "checkout"])
-	}
-
-	await DebugBundle.flush()
-}
-```
-
-## Configuration Reference
-
-Configuration sources and precedence:
-
-1. Explicit `DebugBundleConfig(...)` fields always win.
-2. Runtime configuration and `Bundle` helpers fill values when you use the bundle-backed config path.
-3. SDK defaults apply for anything you leave unset.
-
-Capture-policy fields are server-owned and are not accepted in local SDK configuration. The SDK learns capture policy and probe directives through remote config and applies them locally before transport.
-
-| Field | Default | Purpose |
-| --- | --- | --- |
-| `projectToken` | empty | Write-only DebugBundle project token. Missing or blank tokens leave connected delivery disabled. |
-| `enabled` | `true` | Global kill switch. |
-| `environment` | `production` | Environment label such as `production`, `staging`, or `development`. |
-| `service` | `ios-app` | Service name shown on incidents and bundles. |
-| `endpoint` | `https://api.debugbundle.com/v1/events` | Ingestion endpoint for cloud or self-hosted delivery. |
-| `batchSize` | `10` | Events per flush batch. |
-| `flushInterval` | `3` seconds | Background flush interval; delivery also depends on worker and transport availability. |
-| `sampleRate` | `1.0` | Per-event sample rate. |
-| `sessionSampleRate` | `1.0` | Session-level sampling decision for the whole app session. |
-| `requestTimeout` | `5` seconds | HTTP timeout for delivery and remote config fetches. |
-| `releaseChannel` | `production` | App release lane such as `app-store`, `testflight`, or `internal`. |
-| `appVersion` | app metadata when supplied | Human-readable app version attached to event metadata. |
-| `buildNumber` | app metadata when supplied | Build number attached to event metadata. |
-| `maxEventsPerSession` | `100` | Hard cap after which only exception capture continues. |
-| `maxBreadcrumbs` | `20` | Ring-buffer size for screen, action, network, and log breadcrumbs. |
-| `captureScreens` | `true` | Enable screen breadcrumbs. |
-| `captureActions` | `false` | Enable manual action breadcrumbs. |
-| `captureNetwork` | `true` | Enable first-party request capture. |
-| `captureLogs` | `true` | Enable log-event capture. |
-| `logLevel` | `.warning` | Minimum captured log severity. |
-| `tracePropagationTargets` | `[]` | Allowed first-party targets for `X-DebugBundle-Trace-Id` injection. |
-| `offlineQueueMaxEvents` | `500` | Shared cap across pending hooks, ready events, persistence snapshots and in-flight sends. |
-| `offlineQueueMaxBytes` | `5 MB` | Shared serialized-byte cap across all retained queue states; each event is also capped at 256 KiB. |
-| `offlineQueueTtl` | `72` hours | Drop queued events older than this on delivery attempt. |
-| `fileProtection` | `.completeUntilFirstUserAuthentication` | Queue file protection class for app-private storage. |
-| `offlineQueueURL` | SDK-managed Application Support path | Override queue storage location for tests or advanced setups. |
-| `maxProbeLabels` | `50` | Maximum distinct probe labels buffered in memory. |
-| `maxProbeEntriesPerLabel` | `10` | Ring-buffer size per probe label. |
-| `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
-| `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
-| `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.3` | SDK version stamped into outgoing event metadata. |
-
-Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
-
-`await flush()` waits at most `requestTimeout` (capped at 60 seconds), including preparation and persistence. It does not acknowledge events on timeout or free a stuck sender's ownership. Remote config runs separately. A stalled hook, store or transport causes bounded best-effort loss instead of additional workers or unbounded tasks. Use short, thread-safe hooks, and see [v3 migration](MIGRATION-3.0.md) for shutdown and custom-store implications.
 
 ## Install Examples By Mode
 
@@ -323,7 +378,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current Git/SPM release | `v3.1.3`; existing Trunk `3.1.1` remains available |
+| Current Git/SPM release | `v3.1.4`; existing Trunk `3.1.1` remains available |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -397,32 +452,6 @@ Normal status values:
 - `disconnected` when the SDK is not initialized with a usable config or repeated failures have exhausted the current connection path
 
 `DebugBundle.lastEventAt` returns the timestamp of the last successful delivery, or `nil` before the first success.
-
-## First Event Verification
-
-Point the SDK at a mock, staging, or self-hosted ingestion endpoint that the simulator or device can actually reach:
-
-```swift
-import Foundation
-import DebugBundle
-
-DebugBundle.initialize(
-	DebugBundleConfig(
-		projectToken: Bundle.main.debugBundleProjectToken,
-		service: "checkout-ios",
-		environment: "staging",
-		endpoint: URL(string: "http://127.0.0.1:9001/v1/events")!
-	)
-)
-
-DebugBundle.captureMessage("swift-sdk-smoke", level: .error)
-
-Task {
-	await DebugBundle.flush()
-}
-```
-
-Then confirm the mock or staging project received the event with the expected `service`, `environment`, and SDK metadata.
 
 ## Validation
 
