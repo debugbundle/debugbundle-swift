@@ -6,6 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      release_ref:
+        description: Immutable SDK tag or full commit to qualify; defaults to the workflow ref
+        required: false
+        default: ''
+        type: string
       publish_trunk:
         description: Also publish to writable CocoaPods Trunk (explicit channel only)
         required: true
@@ -18,9 +23,26 @@ permissions:
 jobs:
   publish:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: release-source
     steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+          persist-credentials: false
+
+      - name: Check immutable tag recovery
+        working-directory: release-tools
+        run: python3 scripts/test_release_workflow.py
+
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+          path: release-source
 
       - name: Validate tag matches podspec version
         if: startsWith(github.ref, 'refs/tags/')
@@ -69,10 +91,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           tag="v$VERSION"
           if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
-            git fetch origin "refs/tags/$tag:refs/tags/$tag"
-            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+            git fetch --no-tags origin "refs/tags/$tag"
+            if [ "$(git rev-parse 'FETCH_HEAD^{commit}')" != "$(git rev-parse HEAD)" ]; then
+              echo "Immutable release tag does not match the checked-out SDK source" >&2
+              exit 1
+            fi
           else
-            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$(git rev-parse HEAD)"
           fi
 
       - name: Verify public SPM and Git CocoaPods consumers
@@ -96,6 +121,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
       - name: Install CocoaPods
         run: gem install cocoapods --no-document
       - name: Publish podspec to Trunk

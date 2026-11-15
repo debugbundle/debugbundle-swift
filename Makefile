@@ -1,4 +1,8 @@
 SHELL := /bin/sh
+
+.PHONY: release-workflow-check
+release-workflow-check:
+	python3 scripts/test_release_workflow.py
 SWIFT_TEST_ARGS ?=
 XCODE_TEST_ARGS ?=
 RECEIPT_FILES ?=
