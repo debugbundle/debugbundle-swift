@@ -522,10 +522,11 @@ iOS simulator target with `XCODE_TEST_ARGS='-configuration Release ENABLE_TESTAB
 for the same comparison on the simulator; neither host nor simulator proves device costs.
 
 
-### Unreleased acceptance-credential privacy
+<a id="unreleased-acceptance-credential-privacy"></a>
 
-The source candidate also scrubs standalone `dbundle_invite_`,
+### Acceptance-credential privacy
+
+The SDK scrubs standalone `dbundle_invite_`,
 `dbundle_org_invite_` and `dbundle_org_transfer_` acceptance secrets before
 SDK-owned retention or transmission. See the [shared qualification record](https://github.com/debugbundle/debugbundle/blob/main/spec/business-credential-redaction.md).
-Published packages keep their released behaviour until the coordinated dependency
-and distribution checks are completed and a new version is published.
+Existing installations receive this protection when upgraded to a version that includes it.
