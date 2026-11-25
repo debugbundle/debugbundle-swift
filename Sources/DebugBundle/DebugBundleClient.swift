@@ -79,7 +79,7 @@ public final class DebugBundleClient {
                 freeMemoryBytes: processInfo.physicalMemory > Int64.max ? Int64.max : Int64(processInfo.physicalMemory)
             )
         }
-        self.redactor = DebugBundleRedactor(sensitiveKeys: config.redactFields)
+        self.redactor = DebugBundleRedactor(sensitiveKeys: config.redactFields, exactKeys: config.redactExactFields)
         self.statusValue = config.enabled && !config.projectToken.isEmpty ? .healthy : .disconnected
         self.sessionSampledIn = config.enabled && !config.projectToken.isEmpty && (config.sessionSampleRate >= 1 || random() <= config.sessionSampleRate)
         let activeRedactor = self.redactor

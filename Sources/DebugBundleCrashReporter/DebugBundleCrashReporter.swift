@@ -58,12 +58,17 @@ public final class DebugBundleCrashEvidenceStore {
     private static let ioLock = NSLock()
     private let fileURL: URL
     private var redactFields = DebugBundleConfig.defaultRedactFields
+    private var redactExactFields: Set<String> = []
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private static let maximumBytes = 262_144
 
     public init(fileURL: URL) { self.fileURL = fileURL }
-    public init(fileURL: URL, redactFields: Set<String>) { self.fileURL = fileURL; self.redactFields = redactFields }
+    public init(fileURL: URL, redactFields: Set<String>, redactExactFields: Set<String> = []) {
+        self.fileURL = fileURL
+        self.redactFields = redactFields
+        self.redactExactFields = redactExactFields
+    }
 
     func protect(_ original: DebugBundleCrashEvidence) -> DebugBundleCrashEvidence? {
         guard original.version == 1, DebugBundleRuntimeEvidence.validTimestamp(original.occurredAt), !original.errorType.isEmpty,
@@ -71,7 +76,7 @@ public final class DebugBundleCrashEvidenceStore {
               original.eventId.map(DebugBundleRuntimeEvidence.validEventId) != false else { return nil }
         var record = original
         func text(_ value: String, _ maximum: Int) -> String {
-            DebugBundleRuntimeEvidence.boundedText(value, maximumBytes: maximum, redactFields: redactFields)
+            DebugBundleRuntimeEvidence.boundedText(value, maximumBytes: maximum, redactFields: redactFields, redactExactFields: redactExactFields)
         }
         record.errorType = text(record.errorType, 256)
         record.message = text(record.message, 512)

@@ -9,7 +9,7 @@ enum DebugBundleExceptionEvidence {
         let graph: JSONValue = .object(["version": .number(1), "runtime": .string("swift"), "root_id": .number(0),
             "nodes": .array(snapshot.nodes.map(JSONValue.object)), "truncated": .bool(snapshot.truncated),
             "unavailable_reason": snapshot.unsafe ? .string("unsafe") : error == nil ? .string(unavailableReason) : .null])
-        let safe = redactor.sanitizeJSON(graph)
+        guard let safe = sanitizeExceptionEvidenceBlock(graph, redactor: redactor) else { return nil }
         return DebugBundleAcceptingJSONSize.bytes(safe) <= 31_000 ? safe : nil
     }
 

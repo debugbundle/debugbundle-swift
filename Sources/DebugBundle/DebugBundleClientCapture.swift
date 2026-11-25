@@ -27,7 +27,7 @@ extension DebugBundleClient {
         var payload: [String: JSONValue] = [
             "error": redactor.sanitizeJSON(.object(debugBundleSafeErrorPayload(error))),
             "stack": .string(Thread.callStackSymbols.joined(separator: "\n")),
-            "context": .object(redactor.sanitizeDictionary(mergedContext)),
+            "context": .object(redactor.sanitizeContextDictionary(mergedContext)),
             "breadcrumbs": .array(snapshot.breadcrumbs)
         ]
         if config.probeFlushOnError { payload["probe_data"] = .object(snapshot.probes) }

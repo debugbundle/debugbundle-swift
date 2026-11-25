@@ -82,6 +82,7 @@ public struct DebugBundleConfig: Sendable {
     public var maxProbeEntriesPerLabel: Int
     public var probeFlushOnError: Bool
     public var redactFields: Set<String>
+    public var redactExactFields: Set<String>
     public var headerAllowlist: Set<String>
     public var sdkVersion: String
     public var evidenceOptions = DebugBundleEvidenceOptions()
@@ -118,6 +119,7 @@ public struct DebugBundleConfig: Sendable {
         maxProbeEntriesPerLabel: Int = 10,
         probeFlushOnError: Bool = true,
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
+        redactExactFields: Set<String> = [],
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
         sdkVersion: String = "3.1.5",
         beforeSend: DebugBundleBeforeSend? = nil
@@ -152,10 +154,18 @@ public struct DebugBundleConfig: Sendable {
         self.maxProbeEntriesPerLabel = max(1, maxProbeEntriesPerLabel)
         self.probeFlushOnError = probeFlushOnError
         self.redactFields = redactFields
+        self.redactExactFields = redactExactFields
         self.headerAllowlist = headerAllowlist.map { $0.lowercased() }.reduce(into: Set<String>()) { result, value in
             result.insert(value)
         }
         self.sdkVersion = sdkVersion
         self.beforeSend = beforeSend
+    }
+
+    /// Existing initializers remain unchanged; configure additive exact-match redaction fields on a value copy.
+    public func withRedactExactFields(_ fields: Set<String>) -> Self {
+        var result = self
+        result.redactExactFields = fields
+        return result
     }
 }

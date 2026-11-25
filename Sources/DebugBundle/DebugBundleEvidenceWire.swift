@@ -73,7 +73,7 @@ enum DebugBundleEvidenceWire {
         if let item = event["context"]?.objectValue?["evidence_reference"], reference(item) { additions["evidence_reference"] = item }
         return !checkByteBudget || DebugBundleAcceptingJSONSize.bytes(.object(additions)) <= 32_768
     }
-    private static func graph(_ value: JSONValue, checkByteBudget: Bool) -> Bool {
+    static func graph(_ value: JSONValue, checkByteBudget: Bool) -> Bool {
         guard let graph = value.objectValue, let nodes = graph["nodes"]?.arrayValue else { return false }
         var edges: [Double: [Double]] = [:]
         for item in nodes {
@@ -105,7 +105,7 @@ enum DebugBundleEvidenceWire {
         guard let root = graph["root_id"]?.doubleValue else { return false }
         return visit(root, 0) && reached.count == nodes.count && (!checkByteBudget || DebugBundleAcceptingJSONSize.bytes(value) <= 32_768)
     }
-    private static func resources(_ value: JSONValue?) -> Bool {
+    static func resources(_ value: JSONValue?) -> Bool {
         guard let value, let items = value.objectValue?["items"]?.arrayValue else { return false }
         for item in items {
             guard let observation = item.objectValue else { return false }

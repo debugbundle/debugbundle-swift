@@ -247,7 +247,8 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `maxProbeLabels` | `50` | Maximum distinct probe labels buffered in memory. |
 | `maxProbeEntriesPerLabel` | `10` | Ring-buffer size per probe label. |
 | `probeFlushOnError` | `true` | Attach buffered probes to captured exceptions. |
-| `redactFields` | built-in sensitive field set | Additional field names; the mandatory credential baseline remains active even when this set is empty. |
+| `redactFields` | built-in sensitive field set | Additional broad segment-matched field names; the mandatory credential baseline remains active even when this set is empty. |
+| `redactExactFields` | `[]` | Additional ASCII case-insensitive whole-key redaction fields with punctuation significant (for example, `tag` redacts `tag` and `TAG` without redacting `tag_name` or `tag-name`). Also configurable via `withRedactExactFields(_:)`. Combined custom keys across `redactFields` and `redactExactFields` are capped at 128 entries of up to 64 bytes each. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
 | `sdkVersion` | `3.1.5` | SDK version stamped into outgoing event metadata. |
 

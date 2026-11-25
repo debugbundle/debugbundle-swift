@@ -23,9 +23,9 @@ extension DebugBundleClient {
               DebugBundleRuntimeEvidence.validTimestamp(report.occurredAt), let date = debugBundleParseTimestamp(report.occurredAt),
               ["capture", "native_fatal", "runtime_reported", "throw", "unknown", "unavailable"].contains(report.traceOrigin) else { return false }
         var bounded = report
-        bounded.name = DebugBundleRuntimeEvidence.boundedText(report.name, maximumBytes: 256, redactFields: config.redactFields)
-        bounded.message = DebugBundleRuntimeEvidence.boundedText(report.message, maximumBytes: 512, redactFields: config.redactFields)
-        bounded.stackTrace = report.stackTrace.prefix(32).map { DebugBundleRuntimeEvidence.boundedText($0, maximumBytes: 512, redactFields: config.redactFields) }
+        bounded.name = DebugBundleRuntimeEvidence.boundedText(report.name, maximumBytes: 256, redactFields: config.redactFields, redactExactFields: config.redactExactFields)
+        bounded.message = DebugBundleRuntimeEvidence.boundedText(report.message, maximumBytes: 512, redactFields: config.redactFields, redactExactFields: config.redactExactFields)
+        bounded.stackTrace = report.stackTrace.prefix(32).map { DebugBundleRuntimeEvidence.boundedText($0, maximumBytes: 512, redactFields: config.redactFields, redactExactFields: config.redactExactFields) }
         let error = NSError(domain: bounded.name, code: 0, userInfo: [NSLocalizedDescriptionKey: bounded.message])
         var merged = report.isCurrent ? evidence.context(mergedContext(context)) : mergedContext(context)
         merged["stack_trace"] = JSONValue.array(bounded.stackTrace.map(JSONValue.string))
@@ -33,7 +33,7 @@ extension DebugBundleClient {
         let snapshot = report.isCurrent ? exceptionContextSnapshot() : (breadcrumbs: [], probes: [:])
         var payload: [String: JSONValue] = ["error": .object(debugBundleSafeErrorPayload(error)),
             "stack": .string(Thread.callStackSymbols.joined(separator: "\n")),
-            "context": .object(redactor.sanitizeDictionary(merged)), "breadcrumbs": .array(snapshot.breadcrumbs)]
+            "context": .object(redactor.sanitizeContextDictionary(merged)), "breadcrumbs": .array(snapshot.breadcrumbs)]
         if report.isCurrent && config.probeFlushOnError { payload["probe_data"] = .object(snapshot.probes) }
         var envelope = makeEnvelope(eventType: DebugBundleEventType.frontendException, payload: payload,
             traceId: debugBundleStringValue(from: merged["trace_id"]), occurredAt: date)
@@ -50,8 +50,10 @@ enum DebugBundleFatalEvidence {
         var frames: [JSONValue] = [], truncated = report.stackTrace.count > 8
         for line in report.stackTrace.prefix(8) {
             guard let function = DebugBundleExceptionEvidence.parsedFunction(line) else { continue }
-            if function.utf8.prefix(257).count > 256 { truncated = true }
-            frames.append(.object(["function": .string(DebugBundleExceptionEvidence.clip(function, 256)), "file": .null,
+            guard let scrubbed = redactor.sanitizeProtocolString(DebugBundleExceptionEvidence.clip(function, 256)) else { return nil }
+            let clipped = DebugBundleExceptionEvidence.clip(scrubbed, 256)
+            if function.utf8.prefix(257).count > 256 || clipped != scrubbed { truncated = true }
+            frames.append(.object(["function": .string(clipped), "file": .null,
                 "line": .null, "column": .null, "classification": .string(function.contains("DebugBundle") ? "sdk" : "unknown")]))
         }
         while true {
@@ -60,7 +62,7 @@ enum DebugBundleFatalEvidence {
                     "stack": .null, "trace_origin": .string(report.traceOrigin),
                     "parsing_status": .string(truncated ? "truncated" : frames.isEmpty ? (report.stackTrace.isEmpty ? "unavailable" : "unparsed") : "parsed"),
                     "frames": .array(frames), "relationships": .array([])])]), "truncated": .bool(truncated), "unavailable_reason": .string("unsafe")])
-            let safe = redactor.sanitizeJSON(graph)
+            guard let safe = sanitizeExceptionEvidenceBlock(graph, redactor: redactor) else { return nil }
             var additions: [String: JSONValue] = ["exception_evidence": safe]
             if let reference = context?["evidence_reference"], DebugBundleEvidenceWire.reference(reference) { additions["evidence_reference"] = reference }
             if DebugBundleAcceptingJSONSize.bytes(.object(additions)) <= 4096 { return safe }

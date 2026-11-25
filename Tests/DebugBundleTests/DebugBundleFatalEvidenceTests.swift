@@ -61,11 +61,11 @@ final class DebugBundleFatalEvidenceTests: XCTestCase {
     func testFatalFieldsStayBoundedAndInvalidDateDoesNotOverwriteRetainedEvidence() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = DebugBundleCrashEvidenceStore(fileURL: directory.appendingPathComponent("fatal.json"), redactFields: ["private_label"])
-        let known = NSError(domain: "fictional", code: 1, userInfo: [NSLocalizedDescriptionKey: "private_label=fictional-private"])
+        let store = DebugBundleCrashEvidenceStore(fileURL: directory.appendingPathComponent("fatal.json"), redactFields: ["private_label"], redactExactFields: ["tag"])
+        let known = NSError(domain: "fictional", code: 1, userInfo: [NSLocalizedDescriptionKey: "private_label=fictional-private tag=EXACT_SECRET tag_name=script"])
         let saved = DebugBundleCrashReporter.persistFatalCrash(known, store: store, threadName: String(repeating: "x", count: 1000),
             stackTrace: Array(repeating: String(repeating: "🙂", count: 1000), count: 100))
-        XCTAssertEqual(saved.message, "private_label=[REDACTED]")
+        XCTAssertEqual(saved.message, "private_label=[REDACTED] tag=[REDACTED] tag_name=script")
         XCTAssertLessThanOrEqual(saved.threadName.utf8.count, 64)
         XCTAssertEqual(saved.stackTrace.count, 32)
         XCTAssertTrue(saved.stackTrace.allSatisfy { $0.utf8.count <= 512 })
