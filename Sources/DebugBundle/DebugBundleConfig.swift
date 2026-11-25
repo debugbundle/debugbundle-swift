@@ -121,7 +121,7 @@ public struct DebugBundleConfig: Sendable {
         redactFields: Set<String> = DebugBundleConfig.defaultRedactFields,
         redactExactFields: Set<String> = [],
         headerAllowlist: Set<String> = DebugBundleConfig.defaultHeaderAllowlist,
-        sdkVersion: String = "3.1.5",
+        sdkVersion: String = "3.2.0",
         beforeSend: DebugBundleBeforeSend? = nil
     ) {
         self.projectToken = projectToken

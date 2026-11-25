@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-25
+
+- Apply exact-key privacy to native capture, runtime evidence, and crash reporting while preserving validated protocol fields.
+
 ## [3.1.5] - 2026-11-15
 
 - Keep only bounded safe protocol codes in local rejection diagnostics, excluding credential-shaped strings; preserve original acknowledgement, queue and retry decisions.

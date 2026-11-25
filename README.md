@@ -1,8 +1,8 @@
 # DebugBundle Swift
 
-Patch 3.1.5 preserves application hook redaction under optional-evidence limits and complete validation. Public capture APIs and event schemas remain compatible.
+Version 3.2.0 adds exact-key privacy across native capture, retained evidence, and crash reports.
 
-![SwiftPM](https://img.shields.io/badge/swiftpm-v3.1.5-blue)
+![SwiftPM](https://img.shields.io/badge/swiftpm-v3.2.0-blue)
 ![CI](https://img.shields.io/github/actions/workflow/status/debugbundle/debugbundle-swift/ci.yml?branch=main&label=ci)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
@@ -23,7 +23,7 @@ Add the package to your app target:
 ```swift
 // Package.swift
 dependencies: [
-	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.1.5")
+	.package(url: "https://github.com/debugbundle/debugbundle-swift", from: "3.2.0")
 ],
 targets: [
 	.target(
@@ -39,7 +39,7 @@ targets: [
 ]
 ```
 
-In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.1.5` or a compatible SemVer range.
+In Xcode, you can also use File -> Add Package Dependencies... with `https://github.com/debugbundle/debugbundle-swift` and select `3.2.0` or a compatible SemVer range.
 
 ### CocoaPods
 
@@ -47,7 +47,7 @@ Add the pod to your iOS app target:
 
 ```ruby
 target "CheckoutApp" do
-	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.1.5"
+	pod "DebugBundle", :git => "https://github.com/debugbundle/debugbundle-swift.git", :tag => "v3.2.0"
 end
 ```
 
@@ -250,7 +250,7 @@ Capture-policy fields are server-owned and are not accepted in local SDK configu
 | `redactFields` | built-in sensitive field set | Additional broad segment-matched field names; the mandatory credential baseline remains active even when this set is empty. |
 | `redactExactFields` | `[]` | Additional ASCII case-insensitive whole-key redaction fields with punctuation significant (for example, `tag` redacts `tag` and `TAG` without redacting `tag_name` or `tag-name`). Also configurable via `withRedactExactFields(_:)`. Combined custom keys across `redactFields` and `redactExactFields` are capped at 128 entries of up to 64 bytes each. |
 | `headerAllowlist` | built-in safe header set | Headers allowed into captured network metadata. |
-| `sdkVersion` | `3.1.5` | SDK version stamped into outgoing event metadata. |
+| `sdkVersion` | `3.2.0` | SDK version stamped into outgoing event metadata. |
 
 Logs rejected by the effective local and remote level, and events rejected by full-queue priority admission, return before hook work. Capture retains a bounded privacy-safe snapshot, then returns; one serial worker runs accepted `beforeSend` hooks, final policy/privacy checks, queue recovery and coalesced persistence. Hooks cannot rely on the caller thread or synchronous side effects. Device metadata and weakly held custom reference-error details use that worker too; unsupported custom value/error accessors are withheld as described in the v3 migration.
 
@@ -379,7 +379,7 @@ SwiftPM selects compatible dependency versions for the active compiler; see
 | --- | --- |
 | Minimum app compatibility target | iOS 15 and iPadOS 15 |
 | Host development lane | Swift 5.10 toolchain on macOS with Swift 6-compatible concurrency patterns where practical |
-| Current Git/SPM release | `v3.1.5`; existing Trunk `3.1.1` remains available |
+| Current Git/SPM release | `v3.2.0`; existing Trunk `3.1.1` remains available |
 | Installed-base validation lane | SwiftPM package tests on macOS plus iOS simulator coverage through `xcodebuild` |
 | Primary supported app surfaces | SwiftUI, UIKit, URLSession, Alamofire, SwiftLog |
 | Out of scope for V1 | macOS app runtime capture, watchOS, tvOS, visionOS, widgets, App Clips, server-side Swift |
@@ -398,7 +398,7 @@ The tagged release workflow verifies public SPM and Git CocoaPods consumers befo
 make pod-publish
 ```
 
-GitHub Actions publishes the pod automatically for `v*` tags when the repository has a `COCOAPODS_TRUNK_TOKEN` secret. The tag must match `DebugBundle.podspec` exactly, for example `v3.0.1` for podspec version `3.0.1`.
+The Git tag must match the version in `DebugBundle.podspec`, for example `v3.2.0` for podspec version `3.2.0`.
 
 ## Dependency Alignment
 
